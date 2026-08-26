@@ -16,7 +16,8 @@ from .errors import TranscriptionError
 from .subtitles import write_srt
 
 
-CAPTION_SRT_NAMES = ("script.srt", "captions.srt", "dashboard_captions.srt")
+CAPTION_SRT_NAMES = ("script.srt", "captions.srt", "subtitles.srt",
+                     "dashboard_captions.srt")
 
 
 def find_caption_srt(input_dir):

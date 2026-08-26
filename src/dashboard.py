@@ -452,7 +452,8 @@ class DashboardState:
 
     def _has_user_caption_source(self):
         """True when a user supplied TXT/SRT should take precedence."""
-        names = ("script.txt", "transcript.txt", "script.srt", "captions.srt")
+        names = ("script.txt", "transcript.txt", "script.srt", "captions.srt",
+                 "subtitles.srt")
         return any((self.input_dir / name).is_file() for name in names)
 
     def _destination_for_upload(self, field_name, original_name):
