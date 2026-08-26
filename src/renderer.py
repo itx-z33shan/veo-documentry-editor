@@ -286,21 +286,30 @@ class Renderer:
 
         sr = self.cfg.get("sample_rate", 48000)
         fc = [audio_mod.normalize_narration("0:a", "nar0", self.cfg)]
-        duck = has_music and self.cfg.get("ducking_enabled", True)
-        if duck:
-            # Split narration: one copy for the mix, one as the duck key.
-            fc.append("[nar0]asplit=2[nar][nk]")
+        music_duck = has_music and self.cfg.get("ducking_enabled", True)
+        bed_duck = has_bed and self.cfg.get("clip_audio_ducking_enabled", True)
+        duck_targets = int(bool(music_duck)) + int(bool(bed_duck))
+        if duck_targets:
+            # Each sidechain consumer needs its own narration copy. This lets
+            # an external music stem and Veo clip-audio bed both duck cleanly.
+            labels = ["nar"] + ["nk%d" % i for i in range(duck_targets)]
+            fc.append("[nar0]asplit=%d%s" %
+                      (len(labels), "".join("[%s]" % label for label in labels)))
         else:
             fc.append("[nar0]anull[nar]")
         mix_labels = ["nar"]
+        key_index = 0
         if has_music:
+            music_key = "nk%d" % key_index if music_duck else "nar"
+            if music_duck:
+                key_index += 1
             fc.append(audio_mod.music_chain("1:a", "mus", narration_dur,
-                                            self.cfg,
-                                            "nk" if duck else "nar"))
+                                            self.cfg, music_key))
             mix_labels.append("mus")
         if has_bed:
-            vol = self.cfg.get("clip_audio_volume", 0.15)
-            fc.append("[2:a]aresample=%d,volume=%g[bed]" % (sr, vol))
+            bed_key = "nk%d" % key_index if bed_duck else "nar"
+            fc.append(audio_mod.clip_bed_chain("2:a", "bed", self.cfg,
+                                               bed_key))
             mix_labels.append("bed")
         fc.append(audio_mod.final_mix(mix_labels, narration_dur, self.cfg))
 

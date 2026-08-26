@@ -41,6 +41,8 @@ DEFAULTS = {
     "loop_footage": True,            # loop clips when shorter than a shot
     "max_loop_count": 20,            # safety cap on how many loops per shot
     "clip_audio_enabled": False,     # keep (quiet) original clip audio
+    "clip_audio_volume": 0.12,       # relative volume of clip audio if enabled
+    "clip_audio_ducking_enabled": True,  # lower embedded music under narration
 
     # --- Audio -----------------------------------------------------------
     "loudness_target_lufs": -14.0,
@@ -58,7 +60,6 @@ DEFAULTS = {
     "ducking_ratio": 8.0,
     "ducking_attack_ms": 20,
     "ducking_release_ms": 300,
-    "clip_audio_volume": 0.15,       # relative volume of clip audio if enabled
 
     # --- Subtitles -------------------------------------------------------
     "subtitle_enabled": True,
@@ -177,6 +178,8 @@ def _validate(v):
         raise ConfigurationError("width/height/fps must be positive")
     if not (0.0 < v["music_volume"] <= 1.0):
         raise ConfigurationError("music_volume must be in (0, 1]")
+    if not (0.0 < v["clip_audio_volume"] <= 1.0):
+        raise ConfigurationError("clip_audio_volume must be in (0, 1]")
     if v["crossfade_seconds"] < 0:
         raise ConfigurationError("crossfade_seconds must be >= 0")
     if v["master_audio_mode"] not in VALID_MASTER_AUDIO_MODES:

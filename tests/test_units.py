@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -20,6 +21,7 @@ from src.matcher import assign_clips_to_scenes
 from src.subtitles import write_srt, write_ass, _fmt_timestamp
 from src.timeline import build_timeline, _default_scene
 from src.overrides import apply_overrides
+from src.renderer import Renderer
 
 
 def _cfg(tmp=None):
@@ -108,6 +110,43 @@ class AudioTest(unittest.TestCase):
         self.assertIn("alimiter=limit=0.98", graph)
         self.assertIn("atrim=start=0:end=60", graph)
 
+    def test_embedded_clip_bed_can_duck_under_narration(self):
+        cfg = _cfg()
+        cfg["clip_audio_ducking_enabled"] = True
+        graph = audio_mod.clip_bed_chain("2:a", "bed", cfg, "nar_key")
+        self.assertIn("volume=%g" % cfg["clip_audio_volume"], graph)
+        self.assertIn("sidechaincompress", graph)
+        self.assertIn("[bed_pre][nar_key]", graph)
+
+
+class RendererAudioGraphTest(unittest.TestCase):
+    def test_separate_narration_keys_duck_music_and_clip_bed(self):
+        cfg = _cfg()
+        cfg.update({
+            "clip_audio_enabled": True,
+            "clip_audio_ducking_enabled": True,
+            "ducking_enabled": True,
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            narration = os.path.join(directory, "narration.aac")
+            music = os.path.join(directory, "background.m4a")
+            bed = os.path.join(directory, "clip_bed.m4a")
+            for path in (narration, music, bed):
+                with open(path, "wb") as fh:
+                    fh.write(b"x")
+            renderer = object.__new__(Renderer)
+            renderer.step1 = directory
+            renderer.ffmpeg = "ffmpeg"
+            renderer.cfg = cfg
+            renderer.clip_audio = True
+            with mock.patch("src.renderer._run_ffmpeg") as run_ffmpeg:
+                renderer.mix_audio(narration, music, bed, 60.0)
+            cmd = run_ffmpeg.call_args[0][0]
+            graph = cmd[cmd.index("-filter_complex") + 1]
+            self.assertIn("asplit=3[nar][nk0][nk1]", graph)
+            self.assertIn("[mus_pre][nk0]sidechaincompress", graph)
+            self.assertIn("[bed_pre][nk1]sidechaincompress", graph)
+
 
 class SubtitleTest(unittest.TestCase):
     def test_srt_format(self):
@@ -132,6 +171,8 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(cfg["width"], 1920)
         self.assertEqual(cfg["crf"], 18)
         self.assertEqual(cfg["subtitle_max_chars_per_line"], 42)
+        self.assertEqual(cfg["clip_audio_volume"], 0.12)
+        self.assertTrue(cfg["clip_audio_ducking_enabled"])
 
     def test_pacing_resolution(self):
         with tempfile.TemporaryDirectory() as d:
@@ -150,6 +191,14 @@ class ConfigTest(unittest.TestCase):
         cfg["crf"] = 99
         with self.assertRaises(ConfigurationError):
             from src.config import _validate
+            _validate(cfg)
+
+    def test_invalid_clip_audio_volume(self):
+        from src.errors import ConfigurationError
+        from src.config import _validate
+        cfg = _cfg()
+        cfg["clip_audio_volume"] = 0
+        with self.assertRaises(ConfigurationError):
             _validate(cfg)
 
 

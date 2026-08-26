@@ -20,6 +20,9 @@
   "clip_strategy": "semantic",
   "fallback_strategy": "sequential",
   "loop_footage": true,
+  "clip_audio_enabled": false,
+  "clip_audio_volume": 0.12,
+  "clip_audio_ducking_enabled": true,
 
   "music_enabled": true,
   "music_volume": 0.08,

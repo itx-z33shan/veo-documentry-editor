@@ -429,6 +429,7 @@
       autoTranscript: $("#subtitles").checked && $("#auto-transcript").checked,
       transcriptionModel: $("#transcription-model").value,
       keepClipAudio: $("#keep-clip-audio").checked,
+      clipAudioDucking: $("#clip-audio-ducking").checked,
       clipAudioVolume: Number($("#clip-audio-volume").value),
       transition: $("#transition").value,
       crossfadeSeconds: 0.3,
@@ -444,7 +445,7 @@
       preserve: "Preserve CapCut mix; AAC stays a sync reference",
       replace: "Remove master audio; use narration only",
       rebuild: "Remove master audio; mix narration + separate music",
-      embedded: "Quiet embedded clip audio under narration",
+      embedded: !settings.keepClipAudio ? "Clip audio muted; narration only" : settings.clipAudioDucking ? "Veo clip music automatically ducked under narration" : "Quiet fixed embedded clip audio under narration",
       music: "Separate music ducked under narration",
     }[definition.audioMode];
     const transition = definition.engine === "clips" ? (settings.keepClipAudio && settings.transition === "crossfade" ? "Hard cut (embedded-audio protection)" : settings.transition === "cut" ? "Hard cuts" : "Crossfade") : `${settings.masterFade.toFixed(2)} sec opening/closing fade`;
@@ -644,7 +645,7 @@
       $("#fade-output").textContent = `${Number(event.target.value).toFixed(2)} sec`;
       if (state.step === 4) renderReview();
     });
-    ["#loudness-target", "#true-peak", "#aac-bitrate", "#keep-clip-audio", "#clip-audio-volume", "#transition", "#music-volume", "#ducking", "#subtitles", "#auto-transcript", "#transcription-model"].forEach((selector) => {
+    ["#loudness-target", "#true-peak", "#aac-bitrate", "#keep-clip-audio", "#clip-audio-ducking", "#clip-audio-volume", "#transition", "#music-volume", "#ducking", "#subtitles", "#auto-transcript", "#transcription-model"].forEach((selector) => {
       $(selector).addEventListener("input", () => { updateTransitionHint(); updateCaptionControls(); if (state.step === 4) renderReview(); });
       $(selector).addEventListener("change", () => { updateTransitionHint(); updateCaptionControls(); if (state.step === 4) renderReview(); });
     });

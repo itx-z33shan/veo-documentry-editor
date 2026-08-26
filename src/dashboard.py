@@ -221,6 +221,9 @@ def build_dashboard_config(repo_root, workflow, settings):
     config["clip_audio_volume"] = _number(
         settings, "clipAudioVolume", config.get("clip_audio_volume", 0.12),
         0.01, 0.50)
+    config["clip_audio_ducking_enabled"] = _as_bool(
+        settings.get("clipAudioDucking"),
+        config.get("clip_audio_ducking_enabled", True))
     config["music_enabled"] = workflow == "clips-music"
     config["music_volume"] = _number(
         settings, "musicVolume", config.get("music_volume", 0.08), 0.01, 0.50)

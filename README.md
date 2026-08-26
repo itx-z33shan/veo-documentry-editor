@@ -220,11 +220,15 @@ voice, use:
 python editor.py --config profiles/veo-embedded-bed.json
 ```
 
-That profile retains the clip audio quietly (`clip_audio_volume: 0.12`), adds
-the narration, produces an SRT sidecar only, targets −14 LUFS / −1.5 dBTP,
-and creates a 1080p H.264/AAC web-ready master. It intentionally uses hard
-cuts. With embedded clip audio, global visual crossfades can discard the clip
-bed; use a separate music stem if you want crossfades with continuous music.
+That profile retains the clip audio quietly (`clip_audio_volume: 0.12`) and
+sidechain-ducks it beneath the narration (`clip_audio_ducking_enabled: true`).
+It produces an SRT sidecar only, targets −14 LUFS / −1.5 dBTP, and creates a
+1080p H.264/AAC web-ready master. It intentionally uses hard cuts. With
+embedded clip audio, global visual crossfades can discard the clip bed; use a
+separate music stem if you want crossfades with continuous music. This is **not
+stem separation**: any dialogue, vocals, or generated artifacts already baked
+into a retained Veo clip's audio remain in the bed. Mute or replace a problem
+clip's audio at the source when that is unacceptable.
 
 ### Captions and delivery
 
@@ -490,6 +494,11 @@ paragraph/sentence boundaries. **No LLM is required** for any of this.
   attenuated (default `0.08`). When `ducking_enabled`, narration
   sidechain-compresses the music so narration always stays dominant and music
   recovers during pauses.
+* **Embedded clip audio** (such as Veo3-generated music/ambience) can be kept
+  as a separate low-volume bed with `clip_audio_enabled: true`. By default it
+  is also sidechain-ducked under narration with
+  `clip_audio_ducking_enabled: true`; set `clip_audio_volume` around
+  `0.08–0.12` as a starting point.
 * The **final combined mix** is normalized to the configured target (default
   ~−14 LUFS integrated / −1.5 dBTP), then limited to prevent clipping.
 

@@ -1,6 +1,7 @@
 {
   "clip_audio_enabled": true,
   "clip_audio_volume": 0.12,
+  "clip_audio_ducking_enabled": true,
   "music_enabled": false,
   "transition": "cut",
   "subtitle_enabled": true,

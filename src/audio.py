@@ -7,7 +7,7 @@ Audio chain for the final mix:
 
     narration  -> aresample -> loudnorm (-14 LUFS, -1.5 dBTP)
     music      -> (loop/trim) -> volume -> fade in/out -> duck (sidechain)
-    clip bed   -> (optional low-volume) -> volume
+    clip bed   -> (optional low-volume) -> duck (sidechain)
     mix        -> amix -> loudnorm -> limiter -> aresample -> atrim -> final track
 """
 
@@ -50,6 +50,31 @@ def music_chain(in_label, out_label, narration_dur, cfg, narration_label):
     # Ducking: music_pre is main, narration is sidechain.
     duck = cfg.get("ducking_enabled", True)
     if duck:
+        threshold = cfg.get("ducking_threshold", 0.03)
+        ratio = cfg.get("ducking_ratio", 8.0)
+        attack = cfg.get("ducking_attack_ms", 20)
+        release = cfg.get("ducking_release_ms", 300)
+        chain += (";[%s_pre][%s]sidechaincompress="
+                  "threshold=%g:ratio=%g:attack=%d:release=%d[%s]"
+                  % (out_label, narration_label, threshold, ratio, attack,
+                     release, out_label))
+    else:
+        chain += ";[%s_pre]anull[%s]" % (out_label, out_label)
+    return chain
+
+
+def clip_bed_chain(in_label, out_label, cfg, narration_label):
+    """Prepare embedded clip audio and optionally duck it under narration.
+
+    Veo clips often carry music/ambience but no intended dialogue. Keeping that
+    stream at a low gain is useful, yet a fixed gain can still mask names and
+    important narration. This chain applies the same sidechain settings used
+    for external music when ``clip_audio_ducking_enabled`` is true.
+    """
+    sr = cfg.get("sample_rate", 48000)
+    vol = cfg.get("clip_audio_volume", 0.12)
+    chain = "[%s]aresample=%d,volume=%g[%s_pre]" % (in_label, sr, vol, out_label)
+    if cfg.get("clip_audio_ducking_enabled", True):
         threshold = cfg.get("ducking_threshold", 0.03)
         ratio = cfg.get("ducking_ratio", 8.0)
         attack = cfg.get("ducking_attack_ms", 20)
