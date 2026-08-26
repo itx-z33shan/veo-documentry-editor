@@ -208,6 +208,9 @@ code {
 .range-field small { grid-column: 1 / -1; color: var(--faint); font-size: 10px; font-weight: 400; line-height: 1.45; }
 .compact-toggle { margin-top: 2px; }
 .captions-card { grid-column: 1 / -1; }
+.transcription-option { margin-top: 16px; padding: 14px; border: 1px solid rgba(99, 230, 203, .16); border-radius: 11px; background: rgba(24, 65, 62, .16); }
+.transcription-details { margin-left: 44px; }
+.transcription-option.is-disabled { opacity: .48; pointer-events: none; }
 .preset-chip { align-self: flex-start; color: #cce6e8; border-color: rgba(99, 230, 203, .21); font-size: 10px; letter-spacing: .06em; }
 
 .review-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(250px, .65fr); gap: 12px; margin-top: 28px; }
@@ -276,6 +279,7 @@ code {
   .workflow-card { min-height: 122px; }
   .settings-card-primary, .captions-card { grid-column: auto; }
   .field-grid, .field-grid-two { grid-template-columns: 1fr; }
+  .transcription-details { margin-left: 0; }
   .inventory-grid { grid-template-columns: 1fr; }
   .section-heading, .render-controls { align-items: flex-start; flex-direction: column; }
   .render-actions { justify-content: flex-start; }

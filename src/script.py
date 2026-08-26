@@ -34,8 +34,12 @@ SECONDS_PER_SCENE = 20.0
 
 
 def find_script(input_dir):
-    """Return the first conventional script/transcript/SRT path, else None."""
-    candidates = ["script.txt", "transcript.txt", "script.srt"]
+    """Return the first plain-text script/transcript path, else ``None``.
+
+    Time-coded SRT files are handled separately so their real caption timing is
+    preserved rather than being parsed as ordinary prose.
+    """
+    candidates = ["script.txt", "transcript.txt", "dashboard_transcript.txt"]
     for name in candidates:
         path = os.path.join(input_dir, name)
         if os.path.isfile(path):

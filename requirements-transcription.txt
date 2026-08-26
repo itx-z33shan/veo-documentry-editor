@@ -1,0 +1,9 @@
+# Optional local speech-to-text for the dashboard's “Generate missing captions
+# locally with Whisper” feature. The main editor has no required Python deps.
+#
+# Install only when you want automatic caption extraction:
+#   pip install -r requirements-transcription.txt
+#
+# The selected Whisper model is downloaded to the user's local model cache on
+# first use. It is not committed to this repository.
+faster-whisper>=1.1,<2

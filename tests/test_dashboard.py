@@ -90,6 +90,19 @@ class DashboardUploadTest(unittest.TestCase):
                 self.assertEqual(fh.read(), payload)
 
 
+class DashboardTranscriptionTest(unittest.TestCase):
+    def test_reuses_dashboard_generated_caption_draft(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = DashboardState(directory)
+            state.dashboard_transcript.write_text("Generated words.", encoding="utf-8")
+            state.dashboard_captions.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nGenerated words.\n",
+                encoding="utf-8")
+            request = state._transcription_request(
+                "master-preserve", {"autoTranscript": True}, None, None)
+            self.assertTrue(request["reuse"])
+
+
 class DashboardOutputTest(unittest.TestCase):
     def test_output_listing_ignores_gitkeep_and_blocks_path_escape(self):
         with tempfile.TemporaryDirectory() as directory:

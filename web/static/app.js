@@ -195,6 +195,16 @@
     }
   }
 
+  function updateCaptionControls() {
+    const subtitles = $("#subtitles").checked;
+    const autoTranscript = $("#auto-transcript");
+    const option = $("#transcription-option");
+    const details = $("#transcription-details");
+    autoTranscript.disabled = !subtitles;
+    option.classList.toggle("is-disabled", !subtitles);
+    details.hidden = !subtitles || !autoTranscript.checked;
+  }
+
   function selectWorkflow(workflow) {
     if (!workflowInfo[workflow]) return;
     state.workflow = workflow;
@@ -219,6 +229,11 @@
     sidebarDot.classList.toggle("is-bad", !health.ffmpeg_available);
     $("span:last-child", chip).textContent = health.ffmpeg_available ? "FFmpeg ready locally" : "FFmpeg needs attention";
     sidebarStatus.textContent = health.ffmpeg_available ? "FFmpeg ready" : "FFmpeg unavailable";
+    const whisperStatus = $("#whisper-status");
+    if (whisperStatus && health.local_whisper_message) {
+      whisperStatus.textContent = health.local_whisper_message;
+      whisperStatus.style.color = health.local_whisper_available ? "" : "#efbf71";
+    }
   }
 
   function mediaDetails(item, kind) {
@@ -411,6 +426,8 @@
       aacBitrate: Number($("#aac-bitrate").value),
       masterFade: Number($("#master-fade").value),
       subtitles: $("#subtitles").checked,
+      autoTranscript: $("#subtitles").checked && $("#auto-transcript").checked,
+      transcriptionModel: $("#transcription-model").value,
       keepClipAudio: $("#keep-clip-audio").checked,
       clipAudioVolume: Number($("#clip-audio-volume").value),
       transition: $("#transition").value,
@@ -431,13 +448,17 @@
       music: "Separate music ducked under narration",
     }[definition.audioMode];
     const transition = definition.engine === "clips" ? (settings.keepClipAudio && settings.transition === "crossfade" ? "Hard cut (embedded-audio protection)" : settings.transition === "cut" ? "Hard cuts" : "Crossfade") : `${settings.masterFade.toFixed(2)} sec opening/closing fade`;
+    const uploadedCaptions = Boolean(state.media && state.media.transcript && state.media.transcript.exists);
+    const captions = !settings.subtitles ? "No captions" : uploadedCaptions
+      ? "Uploaded transcript / SRT sidecar"
+      : settings.autoTranscript ? `Local Whisper ${settings.transcriptionModel} draft SRT` : "No caption source selected";
     $("#review-summary").innerHTML = `<div class="review-lines">
       <div class="review-line"><span>Workflow</span><b>${escapeHtml(definition.title)}</b></div>
       <div class="review-line"><span>Audio route</span><b>${escapeHtml(audioPlan)}</b></div>
       <div class="review-line"><span>Delivery</span><b>YouTube + Facebook / 1080p</b></div>
       <div class="review-line"><span>Final target</span><b>${settings.loudnessTarget} LUFS · ${settings.truePeak} dBTP</b></div>
       <div class="review-line"><span>Transitions / fade</span><b>${escapeHtml(transition)}</b></div>
-      <div class="review-line"><span>Captions</span><b>${settings.subtitles ? "SRT sidecar" : "No captions"}</b></div>
+      <div class="review-line"><span>Captions</span><b>${escapeHtml(captions)}</b></div>
     </div>`;
   }
 
@@ -467,7 +488,7 @@
       cancelled: "Render cancelled",
     }[status] || status;
     $("#job-status").textContent = statusLabel;
-    $("#job-stage").textContent = status === "running" ? "FFmpeg / editor working locally" : status === "succeeded" ? "Finished" : job.error || "No process active";
+    $("#job-stage").textContent = job.stage || (status === "running" ? "Working locally" : status === "succeeded" ? "Finished" : job.error || "No process active");
     if (status === "running") led.classList.add("is-running");
     if (status === "succeeded") led.classList.add("is-good");
     if (status === "failed" || status === "cancelled") led.classList.add("is-bad");
@@ -478,7 +499,8 @@
     if (status === "succeeded" && job.action === "dry-run") {
       state.dryRunSucceeded = true;
       $("#render-button").disabled = false;
-      showFlash("Dry run passed. Review the warnings and start the final render when ready.", "success");
+      refreshResults();
+      showFlash("Dry run passed. Review the caption draft and warnings before starting the final render.", "success");
     }
     if (status === "succeeded" && job.action === "render") {
       state.finalRenderSucceeded = true;
@@ -547,6 +569,7 @@
     const list = $("#deliverables-list");
     const videos = files.filter((file) => file.kind === "video");
     const report = files.find((file) => file.kind === "report" && /report\.json$/i.test(file.name));
+    const subtitle = files.find((file) => file.kind === "subtitle" && /subtitles\.srt$/i.test(file.name));
     const preferredVideo = videos.find((file) => /final_master\.mp4$/i.test(file.name)) || videos.find((file) => /final_documentary\.mp4$/i.test(file.name)) || videos[0];
 
     if (preferredVideo) {
@@ -569,6 +592,14 @@
     } else {
       reportLink.hidden = true;
       reportLink.href = "#";
+    }
+    const reviewSrt = $("#review-srt-button");
+    if (subtitle) {
+      reviewSrt.hidden = false;
+      reviewSrt.href = fileUrl(subtitle.name);
+    } else {
+      reviewSrt.hidden = true;
+      reviewSrt.href = "#";
     }
   }
 
@@ -613,9 +644,9 @@
       $("#fade-output").textContent = `${Number(event.target.value).toFixed(2)} sec`;
       if (state.step === 4) renderReview();
     });
-    ["#loudness-target", "#true-peak", "#aac-bitrate", "#keep-clip-audio", "#clip-audio-volume", "#transition", "#music-volume", "#ducking", "#subtitles"].forEach((selector) => {
-      $(selector).addEventListener("input", () => { updateTransitionHint(); if (state.step === 4) renderReview(); });
-      $(selector).addEventListener("change", () => { updateTransitionHint(); if (state.step === 4) renderReview(); });
+    ["#loudness-target", "#true-peak", "#aac-bitrate", "#keep-clip-audio", "#clip-audio-volume", "#transition", "#music-volume", "#ducking", "#subtitles", "#auto-transcript", "#transcription-model"].forEach((selector) => {
+      $(selector).addEventListener("input", () => { updateTransitionHint(); updateCaptionControls(); if (state.step === 4) renderReview(); });
+      $(selector).addEventListener("change", () => { updateTransitionHint(); updateCaptionControls(); if (state.step === 4) renderReview(); });
     });
     $("#dry-run-button").addEventListener("click", () => startJob("dry-run"));
     $("#render-button").addEventListener("click", () => startJob("render"));
@@ -625,6 +656,7 @@
   async function initialize() {
     bindEvents();
     updateWorkflowUI();
+    updateCaptionControls();
     renderReview();
     await refreshMedia(true);
     await refreshResults();

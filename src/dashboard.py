@@ -33,6 +33,8 @@ from .errors import EditorError
 from .inputs import AUDIO_EXTENSIONS, find_music, find_narration
 from .media import Probe, SUPPORTED_VIDEO_EXTS, resolve_binaries
 from .script import find_script
+from .transcription import (find_caption_srt, local_whisper_status,
+                            transcribe_to_srt)
 
 
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024 * 1024  # generous enough for long masters
@@ -311,6 +313,11 @@ class DashboardState:
         self.output_dir = self.repo_root / "output"
         self.temp_dir = self.repo_root / "temp" / "dashboard"
         self.static_dir = self.repo_root / "web" / "static"
+        # Distinct names let the dashboard invalidate only its own generated
+        # captions when a source video/audio file changes, never a user's
+        # manually supplied transcript or SRT.
+        self.dashboard_transcript = self.input_dir / "dashboard_transcript.txt"
+        self.dashboard_captions = self.input_dir / "dashboard_captions.srt"
         for directory in (self.input_dir, self.clips_dir, self.music_dir,
                           self.output_dir, self.temp_dir):
             directory.mkdir(parents=True, exist_ok=True)
@@ -323,6 +330,7 @@ class DashboardState:
             "workflow": None,
             "started_at": None,
             "finished_at": None,
+            "stage": "Idle",
             "logs": [],
             "returncode": None,
             "error": None,
@@ -348,10 +356,13 @@ class DashboardState:
 
     def health(self):
         prober, error = self._prober()
+        whisper_available, whisper_message = local_whisper_status()
         return {
             "ffmpeg_available": bool(prober),
             "message": ("FFmpeg and media inspection are ready." if prober
                         else (error or "FFmpeg is not available.")),
+            "local_whisper_available": whisper_available,
+            "local_whisper_message": whisper_message,
             "local_only_notice": "This dashboard is intended for a trusted local machine.",
         }
 
@@ -370,17 +381,20 @@ class DashboardState:
 
     def media_summary(self):
         prober, probe_error = self._prober()
+        whisper_available, whisper_message = local_whisper_status()
         master_path = _find_master(self.input_dir)
         narration_path = find_narration(str(self.input_dir), required=False)
         music_path = find_music(str(self.music_dir), required=False)
         script_path = find_script(str(self.input_dir))
+        caption_srt = find_caption_srt(str(self.input_dir))
+        transcript_source = script_path or caption_srt
 
         master = self._inspect(master_path, "video", prober) if master_path else {"exists": False}
         narration = (self._inspect(Path(narration_path), "audio", prober)
                      if narration_path else {"exists": False})
         music = (self._inspect(Path(music_path), "audio", prober)
                  if music_path else {"exists": False})
-        transcript = _file_summary(Path(script_path)) if script_path else None
+        transcript = _file_summary(Path(transcript_source)) if transcript_source else None
 
         clip_paths = sorted(
             [path for path in self.clips_dir.iterdir()
@@ -404,6 +418,8 @@ class DashboardState:
             "health": {
                 "ffmpeg_available": bool(prober),
                 "message": ("Media inspection is ready." if prober else probe_error),
+                "local_whisper_available": whisper_available,
+                "local_whisper_message": whisper_message,
             },
             "master": master,
             "narration": narration,
@@ -428,6 +444,16 @@ class DashboardState:
         for path in self.clips_dir.iterdir():
             if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
                 path.unlink()
+
+    def _clear_dashboard_transcription(self):
+        """Remove only dashboard-generated captions, never user files."""
+        for path in (self.dashboard_transcript, self.dashboard_captions):
+            path.unlink(missing_ok=True)
+
+    def _has_user_caption_source(self):
+        """True when a user supplied TXT/SRT should take precedence."""
+        names = ("script.txt", "transcript.txt", "script.srt", "captions.srt")
+        return any((self.input_dir / name).is_file() for name in names)
 
     def _destination_for_upload(self, field_name, original_name):
         name = _safe_filename(original_name)
@@ -512,6 +538,9 @@ class DashboardState:
                             candidate.unlink()
                 elif field_name == "clips" and replace_clips:
                     self._clear_clip_media()
+                if field_name in {"master", "narration", "transcript"} or (
+                        field_name == "clips" and replace_clips):
+                    self._clear_dashboard_transcription()
                 os.replace(temporary, destination)
             except Exception:
                 temporary.unlink(missing_ok=True)
@@ -568,7 +597,96 @@ class DashboardState:
             if len(self._job["logs"]) > 4000:
                 self._job["logs"] = self._job["logs"][-4000:]
 
-    def _run_job(self, job_id, command):
+    def _set_stage(self, job_id, stage):
+        with self._lock:
+            if self._job.get("id") == job_id:
+                self._job["stage"] = stage
+
+    def _cancel_requested(self, job_id):
+        with self._lock:
+            return bool(self._job.get("id") == job_id and
+                        self._job.get("cancel_requested"))
+
+    def _transcription_request(self, workflow, settings, master, narration):
+        """Build an optional local-Whisper preflight request for one job."""
+        if not _as_bool(settings.get("autoTranscript"), False):
+            return None
+        if self._has_user_caption_source():
+            return {"reuse": True, "reason": "Using your uploaded transcript or SRT."}
+        if self.dashboard_transcript.is_file() and self.dashboard_captions.is_file():
+            return {"reuse": True, "reason": "Reusing the existing local Whisper draft."}
+
+        source = Path(narration) if narration else (Path(master) if master else None)
+        if source is None or not source.is_file():
+            raise DashboardError(
+                "Automatic captions need a narration file or a master video with audio.")
+        model = str(settings.get("transcriptionModel", "base") or "base").lower()
+        if model not in {"tiny", "base", "small", "medium", "large-v3"}:
+            raise DashboardError("Choose a supported local Whisper model.")
+        available, message = local_whisper_status()
+        if not available:
+            raise DashboardError(message)
+        return {
+            "reuse": False,
+            "source": str(source),
+            "srt_path": str(self.dashboard_captions),
+            "transcript_path": str(self.dashboard_transcript),
+            "model": model,
+        }
+
+    def _run_transcription(self, job_id, request):
+        if request.get("reuse"):
+            self._append_log(job_id, "[transcription] " + request["reason"])
+            return True
+        self._set_stage(job_id, "Generating local Whisper captions")
+        self._append_log(job_id, "[transcription] Starting local Whisper from %s."
+                         % os.path.basename(request["source"]))
+
+        def progress(message):
+            self._append_log(job_id, "[transcription] " + message)
+
+        result = transcribe_to_srt(
+            request["source"], request["srt_path"], request["transcript_path"],
+            model_size=request["model"], max_chars_per_line=42, max_lines=2,
+            progress_callback=progress)
+        self._append_log(job_id, "[transcription] Draft captions are ready for review: %d cue(s)."
+                         % result["cue_count"])
+        return True
+
+    def _finish_cancelled_before_editor(self, job_id):
+        with self._lock:
+            if self._job.get("id") == job_id:
+                self._job["status"] = "cancelled"
+                self._job["finished_at"] = time.time()
+                self._job["stage"] = "Cancelled"
+
+    def _run_job(self, job_id, command, transcription_request=None):
+        try:
+            if transcription_request:
+                self._run_transcription(job_id, transcription_request)
+            if self._cancel_requested(job_id):
+                self._finish_cancelled_before_editor(job_id)
+                return
+        except EditorError as exc:
+            with self._lock:
+                if self._job.get("id") == job_id:
+                    self._job["status"] = "failed"
+                    self._job["error"] = exc.message
+                    self._job["finished_at"] = time.time()
+                    self._job["stage"] = "Caption generation failed"
+            self._append_log(job_id, "[transcription] ERROR: " + exc.message)
+            return
+        except Exception as exc:  # pragma: no cover - defensive worker boundary
+            with self._lock:
+                if self._job.get("id") == job_id:
+                    self._job["status"] = "failed"
+                    self._job["error"] = "Caption generation failed: %s" % exc
+                    self._job["finished_at"] = time.time()
+                    self._job["stage"] = "Caption generation failed"
+            self._append_log(job_id, "[transcription] ERROR: %s" % exc)
+            return
+
+        self._set_stage(job_id, "Launching editor")
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         popen_kwargs = {
@@ -583,6 +701,9 @@ class DashboardState:
         if os.name != "nt":
             popen_kwargs["start_new_session"] = True
         try:
+            with self._lock:
+                action = self._job.get("action") if self._job.get("id") == job_id else None
+            self._set_stage(job_id, "Running dry check" if action == "dry-run" else "Rendering final video")
             process = subprocess.Popen(command, **popen_kwargs)
             with self._lock:
                 if self._job.get("id") == job_id:
@@ -600,11 +721,14 @@ class DashboardState:
                 self._job["process"] = None
                 if self._job.get("cancel_requested"):
                     self._job["status"] = "cancelled"
+                    self._job["stage"] = "Cancelled"
                 elif returncode == 0:
                     self._job["status"] = "succeeded"
+                    self._job["stage"] = "Finished"
                     self._job["output_files"] = self.output_files()
                 else:
                     self._job["status"] = "failed"
+                    self._job["stage"] = "Editor failed"
                     self._job["error"] = "The editor exited with code %s." % returncode
         except Exception as exc:  # pragma: no cover - process failures are OS-specific
             with self._lock:
@@ -613,6 +737,7 @@ class DashboardState:
                     self._job["error"] = "Could not start the editor: %s" % exc
                     self._job["finished_at"] = time.time()
                     self._job["process"] = None
+                    self._job["stage"] = "Editor failed to start"
 
     def start_job(self, action, workflow, settings):
         if action not in {"dry-run", "render"}:
@@ -620,7 +745,9 @@ class DashboardState:
         health = self.health()
         if not health["ffmpeg_available"]:
             raise DashboardError(health["message"] or "FFmpeg is required to render.")
-        master, _narration, _music, _clips = self._input_paths_for_workflow(workflow)
+        master, narration, _music, _clips = self._input_paths_for_workflow(workflow)
+        transcription_request = self._transcription_request(
+            workflow, settings, master, narration)
         config_path, warnings = self._write_session_config(workflow, settings)
         definition = WORKFLOWS[workflow]
         command = [sys.executable, str(self.repo_root / "editor.py"),
@@ -642,6 +769,8 @@ class DashboardState:
                 "workflow": workflow,
                 "started_at": time.time(),
                 "finished_at": None,
+                "stage": ("Preparing local caption draft" if transcription_request
+                          else "Preparing editor"),
                 "logs": [],
                 "returncode": None,
                 "error": None,
@@ -655,7 +784,8 @@ class DashboardState:
             self._append_log(job_id, "[dashboard] %s started." %
                              ("Dry run" if action == "dry-run" else "Final render"))
             worker = threading.Thread(target=self._run_job,
-                                      args=(job_id, command), daemon=True)
+                                      args=(job_id, command, transcription_request),
+                                      daemon=True)
             worker.start()
         return self.job_snapshot(0)
 
@@ -692,6 +822,7 @@ class DashboardState:
                 "workflow": job.get("workflow"),
                 "started_at": job.get("started_at"),
                 "finished_at": job.get("finished_at"),
+                "stage": job.get("stage"),
                 "returncode": job.get("returncode"),
                 "error": job.get("error"),
                 "warnings": list(job.get("warnings") or []),

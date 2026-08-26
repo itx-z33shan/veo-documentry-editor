@@ -41,6 +41,10 @@ class TimelineError(EditorError):
     """The timeline could not be built or is invalid."""
 
 
+class TranscriptionError(EditorError):
+    """Optional speech-to-text/caption generation problem."""
+
+
 class RenderError(EditorError):
     """An FFmpeg render/encode step failed."""
 

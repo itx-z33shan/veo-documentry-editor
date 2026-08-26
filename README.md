@@ -136,6 +136,24 @@ wizard:
 4. run a dry check, see live editor/FFmpeg logs, then start the render; and
 5. preview/download the MP4, SRT, and JSON report.
 
+### Automatic local captions when no script is available
+
+If you do not upload a script, transcript, or time-coded SRT, keep **Generate
+missing captions locally with Whisper** enabled in Step 03. The dashboard will
+transcribe the clean narration when available, or the embedded audio inside
+the master MP4 when no separate narration file is supplied. It writes a timed
+SRT draft during the dry run so you can review it before final rendering.
+
+Install the optional local transcription engine once:
+
+```bash
+pip install -r requirements-transcription.txt
+```
+
+The selected Whisper model downloads to your local model cache on its first
+use. Audio stays local; no Gemini key or cloud transcription API is used.
+Review names, dates, numbers, punctuation, and cue timing before publishing.
+
 The dashboard is intentionally **local-only by default** and has no login.
 Keep it on `127.0.0.1` for normal use. It runs only structured workflows and
 safe configuration fields—never browser-supplied FFmpeg commands or API keys.
@@ -249,6 +267,7 @@ veo_documentary_editor/
 ├── web/static/          # guided dashboard HTML/CSS/JS (no Node required)
 ├── config.json          # configuration (everything is tunable)
 ├── requirements.txt     # (no Python deps required)
+├── requirements-transcription.txt # optional local faster-whisper captions
 ├── README.md
 ├── profiles/            # reusable finishing / audio-topology configs
 ├── input/
@@ -268,6 +287,7 @@ veo_documentary_editor/
 │   ├── inputs.py             # flexible .aac/.m4a/.mp3/.wav input discovery
 │   ├── mastering.py          # safe finishing of one existing video master
 │   ├── dashboard.py          # local upload/inspection/render web API
+│   ├── transcription.py      # optional local Whisper transcription + timed SRT
 │   ├── scanner.py            # clips scan -> media manifest
 │   ├── script.py             # scene segmentation (deterministic)
 │   ├── matcher.py            # clip→scene assignment (INTELLIGENCE)
@@ -477,9 +497,12 @@ paragraph/sentence boundaries. **No LLM is required** for any of this.
 
 ## Subtitles
 
-* `.srt` and `.ass` files are always written to `output/` when a script exists.
-* Timing is derived from the script's words proportionally distributed over
-  the measured narration duration (no Whisper/LLM needed).
+* A supplied time-coded `.srt` keeps its original timing and is copied to
+  `output/subtitles.srt`.
+* A plain script/transcript creates proportionally timed `.srt` and `.ass`
+  files over the measured narration duration.
+* The local dashboard can optionally generate a word-timed SRT draft with
+  local Whisper when no script exists; review it before publishing.
 * Optional burned-in subtitles via `subtitle_burn_in: true`.
 * ~1–2 lines, ~42 chars/line by default.
 

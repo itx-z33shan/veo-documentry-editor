@@ -259,7 +259,13 @@
 
           <section class="settings-card captions-card">
             <div class="settings-card-head"><span class="settings-icon">¶</span><div><h3>Captions</h3><p>Deliver an upload-ready SRT sidecar; do not burn it into the approved master.</p></div></div>
-            <label class="toggle-row"><input id="subtitles" type="checkbox" checked><span class="toggle-ui"></span><span><b>Generate or copy subtitles.srt</b><small>TXT transcript timing must be reviewed. A supplied SRT keeps its timings.</small></span></label>
+            <label class="toggle-row"><input id="subtitles" type="checkbox" checked><span class="toggle-ui"></span><span><b>Generate or copy subtitles.srt</b><small>Uploaded SRT files retain their timing. All caption drafts need a human review.</small></span></label>
+            <div class="transcription-option" id="transcription-option">
+              <label class="toggle-row"><input id="auto-transcript" type="checkbox" checked><span class="toggle-ui"></span><span><b>Generate missing captions locally with Whisper</b><small>When no transcript/SRT is uploaded, transcribe the clean narration—or the master audio if no AAC is supplied.</small></span></label>
+              <div class="transcription-details" id="transcription-details">
+                <label class="field compact"><span>Local Whisper model</span><select id="transcription-model"><option value="tiny">Tiny — fastest, lower accuracy</option><option value="base" selected>Base — recommended balance</option><option value="small">Small — better accuracy, slower</option><option value="medium">Medium — high accuracy, slower</option><option value="large-v3">Large v3 — highest accuracy, heavy</option></select><small id="whisper-status">The selected model downloads locally on its first use. No audio is sent to a cloud API.</small></label>
+              </div>
+            </div>
           </section>
         </div>
 
@@ -295,6 +301,7 @@
           <button class="button button-secondary" type="button" data-prev-step="3">← Back</button>
           <div class="render-actions">
             <button class="button button-quiet" id="dry-run-button" type="button">Run safe dry check</button>
+            <a class="button button-quiet" id="review-srt-button" href="#" hidden target="_blank" rel="noopener">Review caption draft ↗</a>
             <button class="button button-primary" id="render-button" type="button" disabled>Start final render <span>▶</span></button>
             <button class="button button-danger" id="cancel-button" type="button" hidden>Cancel render</button>
           </div>

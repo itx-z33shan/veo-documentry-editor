@@ -31,6 +31,7 @@ from src.inputs import find_narration, find_music
 from src.mastering import MasterFinisher, write_master_subtitles, write_master_report
 from src.scanner import scan_clips, load_clip_metadata
 from src.script import segment_scenes, find_script
+from src.transcription import find_caption_srt, srt_to_plain_text
 from src.matcher import assign_clips_to_scenes, assign_clips_with_ai
 from src.timeline import build_timeline
 from src.subtitles import write_srt, write_ass, has_text
@@ -163,7 +164,8 @@ def _run_master(cfg, paths, master_path, audio_mode=None, dry_run=False,
 
     subtitles = None
     if cfg.get("subtitle_enabled"):
-        script_path = find_script(paths["input_dir"])
+        script_path = (find_caption_srt(paths["input_dir"]) or
+                       find_script(paths["input_dir"]))
         subtitles, subtitle_warnings = write_master_subtitles(
             script_path, os.path.join(paths["output_dir"], "subtitles.srt"),
             cfg, plan["duration"])
@@ -246,12 +248,17 @@ def _run(cfg, paths, preview=False, dry_run=False):
 
     # --- Script / scenes -------------------------------------------------
     script_path = find_script(paths["input_dir"])
+    caption_srt = find_caption_srt(paths["input_dir"])
     print("\n[3/6] Parsing script...")
     if script_path:
-        with open(script_path, "r", encoding="utf-8") as fh:
+        with open(script_path, "r", encoding="utf-8-sig") as fh:
             script_text = fh.read()
         scenes = segment_scenes(script_text)
         print("  Found script with %d scene(s)." % len(scenes))
+    elif caption_srt:
+        script_text = srt_to_plain_text(caption_srt)
+        scenes = segment_scenes(script_text)
+        print("  Found time-coded SRT with %d derived scene(s)." % len(scenes))
     else:
         scenes = None
         print("  No script found; using single-scene sequential edit.")
@@ -308,7 +315,12 @@ def _run(cfg, paths, preview=False, dry_run=False):
     subtitle_path = None
     cues = timeline["subtitles"]
     if cfg.get("subtitle_enabled"):
-        if has_text(cues):
+        if caption_srt:
+            srt = os.path.join(paths["output_dir"], "subtitles.srt")
+            shutil.copyfile(caption_srt, srt)
+            subtitle_path = srt
+            print("  Copied time-coded SRT -> subtitles.srt (original timing preserved)")
+        elif has_text(cues):
             srt = os.path.join(paths["output_dir"], "subtitles.srt")
             write_srt(cues, srt)
             ass = os.path.join(paths["output_dir"], "subtitles.ass")
@@ -320,7 +332,7 @@ def _run(cfg, paths, preview=False, dry_run=False):
             print("  WARNING: subtitle_enabled is true but no script/transcript "
                   "is available, so no subtitle text can be generated.")
             scan_warnings.append(
-                "No subtitle text source (script.txt); subtitles skipped.")
+                "No subtitle text source (script.txt or caption SRT); subtitles skipped.")
 
     # Reused clips report.
     reused = timeline["reused_clips"]
