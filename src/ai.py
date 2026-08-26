@@ -51,6 +51,92 @@ _DECISION_SCHEMA = {
 }
 
 
+class _DescriptionCache:
+    """Persistent, source-aware cache for Gemini clip descriptions.
+
+    A first pass over a large collection can consume many vision requests. The
+    cache lets a dashboard dry run populate descriptions once, then allows the
+    final render (and later reruns) to reuse them without uploading unchanged
+    clips to Gemini again. Manual ``clips/metadata.json`` entries still take
+    precedence over this generated cache.
+    """
+
+    VERSION = 1
+
+    def __init__(self, path):
+        self.path = str(path or "")
+        self.entries = {}
+
+    @staticmethod
+    def _source_key(clip):
+        path = clip.get("path") or ""
+        try:
+            stat = os.stat(path)
+        except OSError:
+            return None
+        mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1e9))
+        return "%d:%d" % (stat.st_size, mtime_ns)
+
+    def load(self):
+        if not self.path or not os.path.isfile(self.path):
+            return self
+        try:
+            with open(self.path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            entries = data.get("clips", {})
+            self.entries = entries if isinstance(entries, dict) else {}
+        except (OSError, json.JSONDecodeError, AttributeError):
+            self.entries = {}
+        return self
+
+    def get(self, clip):
+        name = clip.get("file") or ""
+        entry = self.entries.get(name)
+        key = self._source_key(clip)
+        if not isinstance(entry, dict) or not key or entry.get("source_key") != key:
+            return None
+        description = entry.get("description") or ""
+        tags = entry.get("tags") or []
+        if not description and not tags:
+            return None
+        if not isinstance(tags, list):
+            tags = []
+        return {"description": str(description), "tags": list(tags)}
+
+    def put(self, clip, metadata):
+        key = self._source_key(clip)
+        name = clip.get("file") or ""
+        if not key or not name:
+            return False
+        description = (metadata or {}).get("description") or ""
+        tags = (metadata or {}).get("tags") or []
+        if not description and not tags:
+            return False
+        if not isinstance(tags, list):
+            tags = []
+        self.entries[name] = {
+            "source_key": key,
+            "description": str(description),
+            "tags": [str(tag) for tag in tags if str(tag).strip()],
+        }
+        return True
+
+    def save(self):
+        if not self.path:
+            return False
+        try:
+            parent = os.path.dirname(os.path.abspath(self.path))
+            os.makedirs(parent, exist_ok=True)
+            temporary = self.path + ".tmp"
+            with open(temporary, "w", encoding="utf-8") as fh:
+                json.dump({"version": self.VERSION, "clips": self.entries}, fh,
+                          ensure_ascii=False, indent=2)
+            os.replace(temporary, self.path)
+            return True
+        except OSError:
+            return False
+
+
 class GeminiAI:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -59,10 +145,17 @@ class GeminiAI:
         self.decision_model = cfg.get("ai_decision_model") or DEFAULT_DECISION_MODEL
         self.top_k = int(cfg.get("ai_top_k", 5))
         self.max_video_bytes = int(cfg.get("ai_max_video_bytes", 30 * 1024 * 1024))
+        self.description_cache_path = cfg.get(
+            "ai_description_cache_path", "output/ai_clip_descriptions.json")
         self.api_key_env = cfg.get("ai_api_key_env") or "GEMINI_API_KEY"
-        self._client = None
-        self._client_error = None
+        self._client_instance = None
         self.warnings = []
+        self.description_cache_stats = {
+            "manual": 0,
+            "cached": 0,
+            "generated": 0,
+            "skipped": 0,
+        }
 
     # ------------------------------------------------------------------
     # availability
@@ -82,9 +175,10 @@ class GeminiAI:
         except Exception:
             return False
 
-    def _client(self):
-        if self._client is not None:
-            return self._client
+    def _get_client(self):
+        """Create the Gemini client once and reuse it for every clip/scene."""
+        if self._client_instance is not None:
+            return self._client_instance
         if not self._import_ok():
             raise EditorError(
                 "Gemini AI configured but the 'google-genai' SDK is not "
@@ -97,8 +191,8 @@ class GeminiAI:
                 hint="Set it with: export GEMINI_API_KEY=...  (free tier: "
                      "https://aistudio.google.com/apikey)")
         from google import genai
-        self._client = genai.Client(api_key=self.api_key)
-        return self._client
+        self._client_instance = genai.Client(api_key=self.api_key)
+        return self._client_instance
 
     # ------------------------------------------------------------------
     # low-level calls
@@ -106,7 +200,7 @@ class GeminiAI:
     def _generate_json(self, model, contents, schema):
         """Ask a model for a JSON object; returns parsed dict or None."""
         from google import genai as _g
-        client = self._client()
+        client = self._get_client()
         prompt = contents if isinstance(contents, str) else contents
         try:
             resp = client.models.generate_content(
@@ -135,7 +229,7 @@ class GeminiAI:
 
     def embed_texts(self, texts):
         """Return a list of embedding vectors (one per input text)."""
-        client = self._client()
+        client = self._get_client()
         if not texts:
             return []
         resp = client.models.embed_content(
@@ -145,24 +239,54 @@ class GeminiAI:
     # ------------------------------------------------------------------
     # clip descriptions (Gemini vision)
     # ------------------------------------------------------------------
-    def describe_clips(self, clips, existing_metadata):
-        """Return {file: {"description", "tags"}} for clips.
-
-        Reuses existing metadata.json entries when present (no API cost);
-        otherwise sends the clip to the vision model.
-        """
+    def _describe_video_blob(self, blob):
+        """Ask Gemini Vision for one constrained factual clip description."""
         from google.genai import types as _types
-        client = self._client()
+        prompt = (
+            "You are a documentary footage librarian. Describe this video "
+            "clip in 1-2 factual sentences and return a JSON object with "
+            "fields description (string) and tags (array of 3-6 short "
+            "keywords). Do not invent history or context that is not visible."
+        )
+        return self._generate_json(
+            self.vision_model,
+            [_types.Part.from_bytes(data=blob, mime_type="video/mp4"),
+             _types.Part(text=prompt)],
+            _DESCRIBE_SCHEMA)
+
+    def describe_clips(self, clips, existing_metadata):
+        """Return descriptions, preferring manual metadata then local cache.
+
+        Unchanged generated descriptions are saved after each successful vision
+        call. This makes a large first pass resumable: a later render does not
+        spend another free-tier request on every clip already described.
+        """
+        cache = _DescriptionCache(self.description_cache_path).load()
+        self.description_cache_stats = {
+            "manual": 0,
+            "cached": 0,
+            "generated": 0,
+            "skipped": 0,
+        }
         out = {}
         for clip in clips:
             name = clip["file"]
             meta = (existing_metadata or {}).get(name) or {}
             if meta.get("description") or meta.get("tags"):
                 out[name] = meta
+                self.description_cache_stats["manual"] += 1
                 continue
+
+            cached = cache.get(clip)
+            if cached:
+                out[name] = cached
+                self.description_cache_stats["cached"] += 1
+                continue
+
             path = clip.get("path")
             if not path or not os.path.isfile(path):
                 self.warnings.append("AI: clip %r file missing." % name)
+                self.description_cache_stats["skipped"] += 1
                 continue
             size = os.path.getsize(path)
             if size > self.max_video_bytes:
@@ -170,36 +294,37 @@ class GeminiAI:
                     "AI: clip %r is %.1f MB (limit %.0f MB); skipped "
                     "vision description." % (name, size / 1048576,
                                              self.max_video_bytes / 1048576))
+                self.description_cache_stats["skipped"] += 1
                 continue
             try:
                 with open(path, "rb") as fh:
                     blob = fh.read()
             except OSError as exc:
                 self.warnings.append("AI: cannot read clip %r: %s" % (name, exc))
+                self.description_cache_stats["skipped"] += 1
                 continue
-            prompt = (
-                "You are a documentary footage librarian. Describe this "
-                "video clip in 1-2 factual sentences and return a JSON object "
-                "with fields description (string) and tags (array of 3-6 "
-                "short keywords). Do not invent history or context that is "
-                "not visible."
-            )
             try:
-                parsed = self._generate_json(
-                    self.vision_model,
-                    [_types.Part.from_bytes(data=blob, mime_type="video/mp4"),
-                     _types.Part(text=prompt)],
-                    _DESCRIBE_SCHEMA)
+                parsed = self._describe_video_blob(blob)
             except EditorError as exc:
                 self.warnings.append("AI: description of %r failed: %s"
                                      % (name, exc.message))
+                self.description_cache_stats["skipped"] += 1
                 continue
             desc = (parsed or {}).get("description") or ""
             tags = (parsed or {}).get("tags") or []
+            if not isinstance(tags, list):
+                tags = []
             if not desc and not tags:
                 self.warnings.append("AI: empty description for %r." % name)
+                self.description_cache_stats["skipped"] += 1
                 continue
-            out[name] = {"description": desc, "tags": list(tags)}
+            generated = {"description": desc, "tags": list(tags)}
+            out[name] = generated
+            cache.put(clip, generated)
+            # Save per clip so an exhausted free-tier quota can be resumed
+            # tomorrow without re-uploading the clips already completed.
+            cache.save()
+            self.description_cache_stats["generated"] += 1
         return out
 
     # ------------------------------------------------------------------

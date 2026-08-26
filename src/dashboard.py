@@ -216,6 +216,10 @@ def build_dashboard_config(repo_root, workflow, settings):
         return config, warnings
 
     embedded_audio = workflow == "clips-embedded"
+    # The browser never receives an API key. This only opts into Gemini when
+    # the trusted local process already has GEMINI_API_KEY in its environment.
+    config["ai_provider"] = ("gemini" if _as_bool(
+        settings.get("useGeminiMatching"), False) else None)
     config["clip_audio_enabled"] = _as_bool(
         settings.get("keepClipAudio"), embedded_audio)
     config["clip_audio_volume"] = _number(

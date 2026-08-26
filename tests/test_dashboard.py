@@ -37,6 +37,7 @@ class DashboardConfigTest(unittest.TestCase):
             "aacBitrate": 256,
             "subtitles": True,
             "keepClipAudio": True,
+            "useGeminiMatching": True,
             "clipAudioDucking": True,
             "clipAudioVolume": 0.12,
             "musicVolume": 0.08,
@@ -45,6 +46,7 @@ class DashboardConfigTest(unittest.TestCase):
             "crossfadeSeconds": 0.3,
         })
         self.assertTrue(config["clip_audio_enabled"])
+        self.assertEqual(config["ai_provider"], "gemini")
         self.assertTrue(config["clip_audio_ducking_enabled"])
         self.assertEqual(config["transition"], "cut")
         self.assertTrue(warnings)

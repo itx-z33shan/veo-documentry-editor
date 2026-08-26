@@ -429,6 +429,7 @@
       autoTranscript: $("#subtitles").checked && $("#auto-transcript").checked,
       transcriptionModel: $("#transcription-model").value,
       keepClipAudio: $("#keep-clip-audio").checked,
+      useGeminiMatching: $("#use-gemini-matching").checked,
       clipAudioDucking: $("#clip-audio-ducking").checked,
       clipAudioVolume: Number($("#clip-audio-volume").value),
       transition: $("#transition").value,
@@ -449,6 +450,7 @@
       music: "Separate music ducked under narration",
     }[definition.audioMode];
     const transition = definition.engine === "clips" ? (settings.keepClipAudio && settings.transition === "crossfade" ? "Hard cut (embedded-audio protection)" : settings.transition === "cut" ? "Hard cuts" : "Crossfade") : `${settings.masterFade.toFixed(2)} sec opening/closing fade`;
+    const matching = definition.engine !== "clips" ? "Existing CapCut visual edit preserved" : settings.useGeminiMatching ? "Gemini visual matching (local key / API quota)" : "Local deterministic clip matching";
     const uploadedCaptions = Boolean(state.media && state.media.transcript && state.media.transcript.exists);
     const captions = !settings.subtitles ? "No captions" : uploadedCaptions
       ? "Uploaded transcript / SRT sidecar"
@@ -459,6 +461,7 @@
       <div class="review-line"><span>Delivery</span><b>YouTube + Facebook / 1080p</b></div>
       <div class="review-line"><span>Final target</span><b>${settings.loudnessTarget} LUFS · ${settings.truePeak} dBTP</b></div>
       <div class="review-line"><span>Transitions / fade</span><b>${escapeHtml(transition)}</b></div>
+      <div class="review-line"><span>Visual matching</span><b>${escapeHtml(matching)}</b></div>
       <div class="review-line"><span>Captions</span><b>${escapeHtml(captions)}</b></div>
     </div>`;
   }
@@ -645,7 +648,7 @@
       $("#fade-output").textContent = `${Number(event.target.value).toFixed(2)} sec`;
       if (state.step === 4) renderReview();
     });
-    ["#loudness-target", "#true-peak", "#aac-bitrate", "#keep-clip-audio", "#clip-audio-ducking", "#clip-audio-volume", "#transition", "#music-volume", "#ducking", "#subtitles", "#auto-transcript", "#transcription-model"].forEach((selector) => {
+    ["#loudness-target", "#true-peak", "#aac-bitrate", "#keep-clip-audio", "#use-gemini-matching", "#clip-audio-ducking", "#clip-audio-volume", "#transition", "#music-volume", "#ducking", "#subtitles", "#auto-transcript", "#transcription-model"].forEach((selector) => {
       $(selector).addEventListener("input", () => { updateTransitionHint(); updateCaptionControls(); if (state.step === 4) renderReview(); });
       $(selector).addEventListener("change", () => { updateTransitionHint(); updateCaptionControls(); if (state.step === 4) renderReview(); });
     });

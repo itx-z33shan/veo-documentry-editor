@@ -114,6 +114,7 @@ DEFAULTS = {
     "ai_top_k": 5,
     "ai_max_video_bytes": 30 * 1024 * 1024,
     "ai_vector_db_path": "output/clip_vectors.json",
+    "ai_description_cache_path": "output/ai_clip_descriptions.json",
 
     # --- Paths / binaries ------------------------------------------------
     "ffmpeg_bin": "ffmpeg",
@@ -123,11 +124,6 @@ DEFAULTS = {
     "clips_dir": "clips",
     "input_dir": "input",
     "music_dir": "music",
-
-    # --- AI layer (optional, unused in v1 core) --------------------------
-    "ai_provider": None,
-    "ai_model": None,
-    "ai_api_key_env": None,
 }
 
 PACING = {

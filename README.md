@@ -136,6 +136,12 @@ wizard:
 4. run a dry check, see live editor/FFmpeg logs, then start the render; and
 5. preview/download the MP4, SRT, and JSON report.
 
+For a raw-clips workflow, Step 03 can optionally enable **Use my local Gemini
+key for visual clip matching**. The browser never receives a key: launch the
+dashboard from a shell that already has `GEMINI_API_KEY` exported and has the
+optional `google-genai` package installed. Enable it only if you accept cloud
+analysis of eligible source clips and the associated API quota use.
+
 ### Automatic local captions when no script is available
 
 If you do not upload a script, transcript, or time-coded SRT, keep **Generate
@@ -342,7 +348,8 @@ decisions ──[validated]──▶ timeline ──▶ FFmpeg
      "ai_decision_model": "models/gemini-3.1-pro-preview", // final picks
      "ai_top_k": 5,
      "ai_max_video_bytes": 31457280,
-     "ai_vector_db_path": "output/clip_vectors.json"
+     "ai_vector_db_path": "output/clip_vectors.json",
+     "ai_description_cache_path": "output/ai_clip_descriptions.json"
    }
    ```
 
@@ -351,6 +358,11 @@ How it works:
 * **Clip descriptions** — clips you already described in
   `clips/metadata.json` are reused (zero API cost); the rest are sent to the
   Gemini vision model for a factual 1–2 sentence description + tags.
+* **Persistent description cache** — generated clip descriptions/tags are
+  saved in `output/ai_clip_descriptions.json`, keyed to the source file's size
+  and modification time. A dry run can describe a large library once; a later
+  final render reuses unchanged descriptions instead of uploading those clips
+  again. Manual `clips/metadata.json` entries always take precedence.
 * **Local vector DB** — descriptions are embedded and cached in
   `output/clip_vectors.json` (a tiny zero-dependency flat-file store with
   cosine retrieval). Stale entries are invalidated automatically.
@@ -370,6 +382,27 @@ Available Gemini free-tier model names (defaults are picked from these):
 * `models/gemini-3.7-flash` — vision / clip descriptions
 * `models/gemini-embedding-2` — embeddings
 * `models/gemini-3.1-pro-preview`, `models/gemini-3.5-flash`, etc. — decisions
+
+### Large libraries and a free Gemini key
+
+A library of 70+ clips is practical for the local renderer, but a first Gemini
+analysis pass can be substantial. Each eligible clip without a manual
+`clips/metadata.json` entry is sent once for a vision description; by default,
+clips larger than 30 MB are skipped for vision analysis. The generated
+`output/ai_clip_descriptions.json` cache is saved after each successful clip,
+so a quota interruption can be resumed later without resending completed
+clips. The final render reuses that cache.
+
+Free-tier quotas, rate limits, and available models vary by Google account,
+region, and date. Do not assume that all 70 clips will be accepted in one
+session. Start with a **dry run**, keep the generated cache, and review any AI
+warnings. Supplying final narration text with useful scene/paragraph markers
+is important: Gemini can only match clips well when it has meaningful scene
+text to match against.
+
+For privacy, an eligible unlabelled clip is sent to Gemini for visual analysis
+when this option is enabled. The API key is read only from the local process
+environment; never place it in Git, a browser form, or chat.
 
 ---
 
