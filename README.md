@@ -17,9 +17,9 @@ CapCut/Premiere/DaVinci.
 ## What it does
 
 ```
-clips/          input/          music/            output/
-001.mp4         narration.mp3   background.mp3    final_documentary.mp4
-002.mp4         script.txt      (optional)        subtitles.srt
+clips/          input/            music/              output/
+001.mp4         narration.aac     background.m4a     final_documentary.mp4
+002.mp4         transcript.txt    (optional)          subtitles.srt
 003.mp4         (optional)                         timeline.json
 ...                                                 timeline.txt
                                                      edit_report.json
@@ -49,6 +49,15 @@ The final video matches the narration duration within ~100 ms.
   Paths are configurable via `ffmpeg_bin` / `ffprobe_bin` in `config.json`.
 * **No Python dependencies** — the pipeline is pure standard library.
 
+### Keep local installs and source media out of Git
+
+Do **not** commit or push an FFmpeg installation, `site-packages`, `.venv`,
+API keys, CapCut exports, Veo clips, narration, or music. FFmpeg is a local
+system prerequisite and the media folders are intentionally ignored. The
+optional `google-genai` package is only needed for Gemini clip matching; it is
+not needed to master a finished video. Commit source code, configuration
+profiles, and dependency instructions—not locally installed binaries.
+
 Install FFmpeg:
 
 ```bash
@@ -72,9 +81,9 @@ brew install ffmpeg
 
 ```bash
 # 1. Put your Veo clips in clips/        (001.mp4, 002.mp4, ...)
-# 2. Put your narration in input/narration.mp3
-# 3. (optional) Put the script in input/script.txt
-# 4. (optional) Put music in music/background.mp3
+# 2. Put your narration in input/narration.*  (.aac, .mp3, .m4a, .wav, ...)
+# 3. (optional) Put the final script/transcript in input/transcript.txt
+# 4. (optional) Put a separate music stem in music/background.*
 
 # 5. Run the editor
 python editor.py
@@ -97,8 +106,104 @@ python editor.py --resume         # reuse completed intermediate steps
 python editor.py --force          # ignore cache, re-render everything
 python editor.py --clean          # delete temporary files only
 python editor.py --config my.json # use an alternate config file
+
+# Finish one already-edited CapCut/Premiere/DaVinci export safely
+python editor.py --master input/master.mp4 --master-audio-mode preserve
+python editor.py --master input/master.mp4 --master-audio-mode replace
+python editor.py --master input/master.mp4 --master-audio-mode rebuild
 python editor.py --help
 ```
+
+---
+
+## Finishing an existing CapCut master (recommended for your current case)
+
+If you already have an 11-minute CapCut export with its 70+ visual edits and
+ElevenLabs narration synced, **do not run it back through automatic shot
+planning**. That would invent new cuts on top of an edit you have already
+approved. Use the master-finishing workflow instead.
+
+Place these untracked working files locally:
+
+```text
+input/master.mp4          # final CapCut visual export with its embedded mix
+input/narration.aac       # clean ElevenLabs voice; used as a sync reference
+input/transcript.txt      # final words actually spoken
+```
+
+Then run:
+
+```bash
+python editor.py --config profiles/master-preserve.json \
+  --master input/master.mp4 --master-audio-mode preserve
+```
+
+This stream-copies the visual master when no final visual fade is requested,
+normalizes/limits its embedded audio to the configured delivery target,
+creates `output/final_master.mp4`, and writes `output/subtitles.srt` plus
+`output/master_report.json`.
+
+### Pick the audio mode from the real source topology
+
+| Situation | Mode | What happens |
+|---|---|---|
+| CapCut export already contains the synced voice and the Veo clip music | `preserve` | Masters the existing combined mix. The separate ElevenLabs AAC is checked as a reference **and is not mixed again**, so it cannot create doubled voice/echo. |
+| Existing video has no audio you want to keep | `replace` | Removes the master audio and uses only the clean narration. |
+| You have a clean narration **and a separate licensed music stem** | `rebuild` | Removes the master audio, ducks the separate music under narration, then masters the final mix. |
+| You have the original many Veo/CapCut clips, each with useful embedded music/ambience, plus clean ElevenLabs narration | regular clip workflow | Keep the clips in `clips/`, use `profiles/veo-embedded-bed.json`, and run `python editor.py`. |
+
+Never choose `rebuild` using a CapCut export as the “music” input: it may
+already contain the narration and would reintroduce the duplicate-voice
+problem. If the original clips are available, the clip workflow is the better
+way to reconstruct a mix from their embedded audio.
+
+### Embedded-music Veo clips + separate ElevenLabs narration
+
+For raw source clips that contain their own background music/ambience but no
+voice, use:
+
+```bash
+# clips/001.mp4 ... clips/070.mp4      (Veo clips with their own audio)
+# input/narration.aac                  (ElevenLabs voice)
+# input/transcript.txt                 (final script)
+python editor.py --config profiles/veo-embedded-bed.json
+```
+
+That profile retains the clip audio quietly (`clip_audio_volume: 0.12`), adds
+the narration, produces an SRT sidecar only, targets −14 LUFS / −1.5 dBTP,
+and creates a 1080p H.264/AAC web-ready master. It intentionally uses hard
+cuts. With embedded clip audio, global visual crossfades can discard the clip
+bed; use a separate music stem if you want crossfades with continuous music.
+
+### Captions and delivery
+
+A supplied time-coded `input/script.srt` is copied unchanged. A plain
+`input/transcript.txt` or `input/script.txt` produces an SRT whose cue timing
+is estimated from word count over the measured duration. It is useful as a
+starting point, but **review the timings against the spoken narration** before
+uploading.
+
+For a 1920×1080 H.264/yuv420p CapCut export, the included profiles preserve
+that compatible visual format (or re-encode it when a final fade is enabled),
+use 48 kHz AAC at 256 kbps, `+faststart`, −14 LUFS target, and a −1.5 dBTP
+ceiling. That is a sensible single landscape master for both YouTube and
+Facebook. Upload the matching `subtitles.srt` separately on each platform. Do
+not assume an SRT is correct until names, numbers, pauses, and final cue timing
+have been checked.
+
+### Transitions and final QC
+
+Individual CapCut transitions are baked into `master.mp4`; a finishing pass
+can add only an optional beginning/end fade, not safely reinterpret 70+
+individual transitions. To change a specific transition, use the CapCut
+project or original clips.
+
+For documentary pacing, keep most cuts hard. Reserve 0.2–0.35 second
+dissolves for a genuine time/place/mood change and a short dip-to-black for a
+chapter break. Before publishing, watch the complete 11-minute file once and
+check narration sync at the **end**, abrupt music changes, clicks at clip
+boundaries, black/flash frames, subtitle spelling/timing, and speech clarity
+on both phone/laptop speakers and headphones.
 
 ---
 
@@ -110,20 +215,23 @@ veo_documentary_editor/
 ├── config.json          # configuration (everything is tunable)
 ├── requirements.txt     # (no Python deps required)
 ├── README.md
+├── profiles/            # reusable finishing / audio-topology configs
 ├── input/
-│   ├── narration.mp3
+│   ├── narration.aac        # any supported audio extension is accepted
 │   └── script.txt            # optional
 ├── clips/
 │   ├── 001.mp4 ...
 │   └── metadata.json         # optional semantic tags
 ├── music/
-│   └── background.mp3        # optional
+│   └── background.m4a        # optional; any supported audio extension
 ├── output/                   # final deliverables
 ├── temp/                     # intermediate files (auto-managed, resumable)
 ├── src/
 │   ├── errors.py             # human-readable error types
 │   ├── config.py             # defaults + validation
 │   ├── media.py              # ffprobe/ffmpeg discovery + probing
+│   ├── inputs.py             # flexible .aac/.m4a/.mp3/.wav input discovery
+│   ├── mastering.py          # safe finishing of one existing video master
 │   ├── scanner.py            # clips scan -> media manifest
 │   ├── script.py             # scene segmentation (deterministic)
 │   ├── matcher.py            # clip→scene assignment (INTELLIGENCE)
@@ -272,7 +380,10 @@ Everything lives in `config.json`. Highlights:
   "subtitle_enabled": true, "subtitle_burn_in": false,
   "intro_enabled": false, "outro_enabled": false,
   "loudness_target_lufs": -14.0, "loudness_target_tp": -1.5,
-  "sample_rate": 48000, "aac_bitrate": 192, "faststart": true
+  "sample_rate": 48000, "aac_bitrate": 192, "faststart": true,
+
+  "master_audio_mode": "preserve", // "preserve" | "replace" | "rebuild"
+  "master_fade_seconds": 0.0
 }
 ```
 
@@ -317,12 +428,14 @@ paragraph/sentence boundaries. **No LLM is required** for any of this.
 
 ## Audio
 
-* **Narration** is normalized to ~ −14 LUFS integrated, ~ −1.5 dBTP (configurable).
+* **Narration** is normalized before mixing so it remains clear and provides a
+  stable ducking key.
 * **Music** (optional) loops to match narration, fades in/out, and is heavily
   attenuated (default `0.08`). When `ducking_enabled`, narration
   sidechain-compresses the music so narration always stays dominant and music
   recovers during pauses.
-* Final mix is limited to prevent clipping.
+* The **final combined mix** is normalized to the configured target (default
+  ~−14 LUFS integrated / −1.5 dBTP), then limited to prevent clipping.
 
 ---
 
@@ -359,16 +472,15 @@ failures.
 
 ## Post-processing your own MP4
 
-Because the editor treats every input clip as just footage, you can also use
-it to post-process an exported MP4:
+For an already edited export, use `--master` rather than putting the single
+MP4 into `clips/`. The master workflow preserves the visual timeline and makes
+the crucial audio choice explicit: preserve its baked mix, replace it with a
+clean narration, or rebuild it only when separate music is available.
 
-* drop your video clip(s) into `clips/`,
-* supply narration and/or music and/or a script,
-* trim shots by adjusting pacing / min/max shot durations or via overrides,
-* then use it to: **add/replace narration**, **add music**, **normalize
-  audio**, **add subtitles**, **change resolution/aspect** (`fit: crop/pad`),
-  **trim/cut**, **add intro/outro**, **add fades/transitions**, **compress /
-  re-encode**, and **produce a YouTube-ready 1080p MP4**.
+Use the normal clip workflow only when you genuinely want to assemble or
+re-cut source footage. It can then add/replace narration, add a separate music
+stem, normalize audio, generate subtitles, change resolution/aspect
+(`fit: crop/pad`), add intro/outro, and produce a YouTube/Facebook-ready MP4.
 
 For a quick **Shorts / vertical** cut, set `width: 1080, height: 1920` and
 `fit: crop` in a `config-shorts.json` and run `--config config-shorts.json`.

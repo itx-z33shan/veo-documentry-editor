@@ -13,6 +13,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import load_config, PACING
+from src import audio as audio_mod
 from src.scanner import natural_key
 from src.script import segment_scenes, derive_visual_requirements, _package_by_budget
 from src.matcher import assign_clips_to_scenes
@@ -97,6 +98,15 @@ class MatcherTest(unittest.TestCase):
         cfg["fallback_strategy"] = "sequential"
         mapping = assign_clips_to_scenes(scenes, clips, cfg)
         self.assertEqual(mapping[1], [c["file"] for c in clips])
+
+
+class AudioTest(unittest.TestCase):
+    def test_final_mix_masters_combined_audio(self):
+        graph = audio_mod.final_mix(["nar", "bed"], 60.0, _cfg())
+        self.assertIn("amix=inputs=2", graph)
+        self.assertIn("loudnorm=I=-14", graph)
+        self.assertIn("alimiter=limit=0.98", graph)
+        self.assertIn("atrim=start=0:end=60", graph)
 
 
 class SubtitleTest(unittest.TestCase):

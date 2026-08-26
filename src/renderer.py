@@ -98,11 +98,16 @@ class Renderer:
         if self.crossfade:
             self.d = min(self.d, cfg.get("min_clip_seconds", 2) * 0.5)
         self.clip_audio = cfg.get("clip_audio_enabled", False)
+        self._warnings = []
+        self._log = []
+        if self.crossfade and self.clip_audio:
+            self._warnings.append(
+                "clip_audio_enabled is not retained during crossfade assembly; "
+                "use transition='cut' to keep embedded clip audio, or supply "
+                "a separate music stem for crossfades.")
         from .media import has_filter
         self.has_drawtext = has_filter(ffmpeg_bin, "drawtext")
         self.has_subtitles = has_filter(ffmpeg_bin, "subtitles")
-        self._warnings = []
-        self._log = []
 
     def warnings(self):
         return list(self._warnings)

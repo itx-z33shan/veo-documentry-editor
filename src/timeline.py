@@ -89,6 +89,28 @@ def _scene_timing(scenes, sentences):
         scene["end"] = round(scene["end"], 3)
 
 
+def build_subtitle_cues(cfg, scenes, duration):
+    """Build proportional subtitle cues without planning any video shots.
+
+    This is useful when finalising an already edited master: the video edit is
+    intentionally left untouched, while a final transcript still needs an SRT
+    file.  The caller should label these cues as *review required* because a
+    plain transcript does not contain word-level timings.
+
+    ``scenes`` is modified only to receive its derived start/end values, just
+    like :func:`build_timeline`.
+    """
+    total = float(duration)
+    if total <= 0:
+        raise TimelineError("Subtitle duration must be greater than zero.")
+    sentences = _flatten_sentences(scenes)
+    if not sentences:
+        return []
+    _compute_sentence_timing(sentences, total)
+    _scene_timing(scenes, sentences)
+    return _build_subtitle_cues(sentences, cfg)
+
+
 def _build_subtitle_cues(sentences, cfg):
     """Group sentences into <=2 line, <=42 char cues with timings."""
     max_chars = cfg["subtitle_max_chars_per_line"] * cfg["subtitle_max_lines"]

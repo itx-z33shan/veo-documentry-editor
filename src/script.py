@@ -34,7 +34,7 @@ SECONDS_PER_SCENE = 20.0
 
 
 def find_script(input_dir):
-    """Return path to input/script.txt if it exists, else None."""
+    """Return the first conventional script/transcript/SRT path, else None."""
     candidates = ["script.txt", "transcript.txt", "script.srt"]
     for name in candidates:
         path = os.path.join(input_dir, name)

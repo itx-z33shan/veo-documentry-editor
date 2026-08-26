@@ -8,7 +8,7 @@ Audio chain for the final mix:
     narration  -> aresample -> loudnorm (-14 LUFS, -1.5 dBTP)
     music      -> (loop/trim) -> volume -> fade in/out -> duck (sidechain)
     clip bed   -> (optional low-volume) -> volume
-    mix        -> amix -> alimiter -> aresample -> atrim -> final track
+    mix        -> amix -> loudnorm -> limiter -> aresample -> atrim -> final track
 """
 
 import os
@@ -64,23 +64,31 @@ def music_chain(in_label, out_label, narration_dur, cfg, narration_label):
 
 
 def final_mix(labels, narration_dur, cfg):
-    """amix all prepared tracks, then limiter + aresample + trim to duration.
+    """Mix prepared tracks and master the *final* delivery audio.
+
+    Narration is normalized earlier so it remains a stable sidechain key, but
+    the addition of music or embedded clip audio can still move the integrated
+    loudness. A final loudness pass therefore happens after ``amix``. This is
+    the value that matters for a YouTube/Facebook delivery master.
 
     ``labels``: list of already-prepared stream labels to mix.
     Returns a filter string ending in ``[aout]``.
     """
     n = len(labels)
-    sr = cfg.get("sample_rate", 48000)
+    sr = int(cfg.get("sample_rate", 48000))
+    lufs = float(cfg.get("loudness_target_lufs", -14.0))
+    tp = float(cfg.get("loudness_target_tp", -1.5))
+    lra = float(cfg.get("loudness_lra", 11.0))
     srcs = "".join("[%s]" % lb for lb in labels)
     d = float(narration_dur)
     if n == 1:
-        # Single track: just normalize + trim.
-        return ("%saresample=%d,alimiter=limit=0.98:level=false,"
-                "atrim=0:%g[aout]" % (srcs, sr, d))
-    # amix with normalize=0 keeps each input's pre-set levels.
-    mix = "%samix=inputs=%d:normalize=0:dropout_transition=3," % (srcs, n)
-    return ("%saresample=%d,alimiter=limit=0.98:level=false,"
-            "atrim=0:%g[aout]" % (mix, sr, d))
+        pre = srcs
+    else:
+        # normalize=0 keeps each input's deliberate pre-set level intact.
+        pre = "%samix=inputs=%d:normalize=0:dropout_transition=3," % (srcs, n)
+    return ("%sloudnorm=I=%g:TP=%g:LRA=%g,aresample=%d,"
+            "alimiter=limit=0.98:level=false,atrim=start=0:end=%g[aout]"
+            % (pre, lufs, tp, lra, sr, d))
 
 
 def detect_silences(path, ffmpeg_bin, threshold=-45, min_duration=0.3):

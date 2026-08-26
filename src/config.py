@@ -47,6 +47,10 @@ DEFAULTS = {
     "loudness_target_tp": -1.5,
     "loudness_lra": 11.0,
     "sample_rate": 48000,
+    # Optional explicit paths. When unset, conventional names such as
+    # input/narration.aac and music/background.m4a are auto-discovered.
+    "narration_path": None,
+    "music_path": None,
     "music_enabled": True,
     "music_volume": 0.08,
     "ducking_enabled": True,
@@ -91,6 +95,15 @@ DEFAULTS = {
     "preview_crf": 28,
     "preview_preset": "veryfast",
 
+    # --- Existing-export / mastering workflow -----------------------------
+    # Used by: python editor.py --master input/master.mp4
+    # preserve = master has its own final mix; replace = narration only;
+    # rebuild = clean narration + external music stem.
+    "master_audio_mode": "preserve",
+    "master_fade_seconds": 0.0,
+    "master_sync_tolerance_seconds": 0.35,
+    "master_output_name": "final_master.mp4",
+
     # --- AI layer (optional, Gemini free tier) ----------------------------
     "ai_provider": None,          # "gemini" | None (deterministic)
     "ai_api_key_env": "GEMINI_API_KEY",
@@ -130,6 +143,7 @@ VALID_TRANSITIONS = {"cut", "crossfade"}
 VALID_FIT = {"pad", "crop"}
 VALID_STRATEGIES = {"semantic", "sequential"}
 VALID_PACING = set(PACING.keys())
+VALID_MASTER_AUDIO_MODES = {"preserve", "replace", "rebuild"}
 
 
 def _validate(v):
@@ -165,6 +179,14 @@ def _validate(v):
         raise ConfigurationError("music_volume must be in (0, 1]")
     if v["crossfade_seconds"] < 0:
         raise ConfigurationError("crossfade_seconds must be >= 0")
+    if v["master_audio_mode"] not in VALID_MASTER_AUDIO_MODES:
+        raise ConfigurationError(
+            "master_audio_mode must be one of %s, got %r"
+            % (sorted(VALID_MASTER_AUDIO_MODES), v["master_audio_mode"]))
+    if v["master_fade_seconds"] < 0:
+        raise ConfigurationError("master_fade_seconds must be >= 0")
+    if v["master_sync_tolerance_seconds"] < 0:
+        raise ConfigurationError("master_sync_tolerance_seconds must be >= 0")
 
 
 def load_config(path=None, overrides=None):
