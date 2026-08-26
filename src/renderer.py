@@ -98,11 +98,16 @@ class Renderer:
         if self.crossfade:
             self.d = min(self.d, cfg.get("min_clip_seconds", 2) * 0.5)
         self.clip_audio = cfg.get("clip_audio_enabled", False)
+        self._warnings = []
+        self._log = []
+        if self.crossfade and self.clip_audio:
+            self._warnings.append(
+                "clip_audio_enabled is not retained during crossfade assembly; "
+                "use transition='cut' to keep embedded clip audio, or supply "
+                "a separate music stem for crossfades.")
         from .media import has_filter
         self.has_drawtext = has_filter(ffmpeg_bin, "drawtext")
         self.has_subtitles = has_filter(ffmpeg_bin, "subtitles")
-        self._warnings = []
-        self._log = []
 
     def warnings(self):
         return list(self._warnings)
@@ -160,11 +165,15 @@ class Renderer:
             if (not self.cfg.get("force", False)
                     and _needs_skip(marker, key)):
                 self._log.append("reuse shot %04d (%s)" % (i, shot["clip"]))
+                print("  Render progress: shot %d/%d reused (%s)" %
+                      (i + 1, n, shot["clip"]), flush=True)
                 continue
 
             _check_disk(self.step1)
             self._render_shot(shot, clip, length, vf, out)
             _write_marker(marker, key)
+            print("  Render progress: shot %d/%d complete (%s)" %
+                  (i + 1, n, shot["clip"]), flush=True)
         return out_paths
 
     def _render_shot(self, shot, clip, length, vf, out):
@@ -268,30 +277,50 @@ class Renderer:
         out = os.path.join(self.step1, "audio_mix.m4a")
         cmd = [self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                "-i", narration_path]
-        has_music = bool(music_path and os.path.isfile(music_path))
+        # Inputs are optional and therefore do not have fixed FFmpeg indexes.
+        # In particular, the embedded-bed profile deliberately has no external
+        # music, making the clip bed input 1:a rather than 2:a.
+        has_music = bool(self.cfg.get("music_enabled", True) and music_path
+                         and os.path.isfile(music_path))
+        input_index = 1
+        music_input = None
         if has_music:
+            music_input = "%d:a" % input_index
             cmd += ["-stream_loop", "-1", "-i", music_path]
+            input_index += 1
         has_bed = bool(self.clip_audio and bed_path and os.path.isfile(bed_path))
+        bed_input = None
         if has_bed:
+            bed_input = "%d:a" % input_index
             cmd += ["-i", bed_path]
+            input_index += 1
 
         sr = self.cfg.get("sample_rate", 48000)
         fc = [audio_mod.normalize_narration("0:a", "nar0", self.cfg)]
-        duck = has_music and self.cfg.get("ducking_enabled", True)
-        if duck:
-            # Split narration: one copy for the mix, one as the duck key.
-            fc.append("[nar0]asplit=2[nar][nk]")
+        music_duck = has_music and self.cfg.get("ducking_enabled", True)
+        bed_duck = has_bed and self.cfg.get("clip_audio_ducking_enabled", True)
+        duck_targets = int(bool(music_duck)) + int(bool(bed_duck))
+        if duck_targets:
+            # Each sidechain consumer needs its own narration copy. This lets
+            # an external music stem and Veo clip-audio bed both duck cleanly.
+            labels = ["nar"] + ["nk%d" % i for i in range(duck_targets)]
+            fc.append("[nar0]asplit=%d%s" %
+                      (len(labels), "".join("[%s]" % label for label in labels)))
         else:
             fc.append("[nar0]anull[nar]")
         mix_labels = ["nar"]
+        key_index = 0
         if has_music:
-            fc.append(audio_mod.music_chain("1:a", "mus", narration_dur,
-                                            self.cfg,
-                                            "nk" if duck else "nar"))
+            music_key = "nk%d" % key_index if music_duck else "nar"
+            if music_duck:
+                key_index += 1
+            fc.append(audio_mod.music_chain(music_input, "mus", narration_dur,
+                                            self.cfg, music_key))
             mix_labels.append("mus")
         if has_bed:
-            vol = self.cfg.get("clip_audio_volume", 0.15)
-            fc.append("[2:a]aresample=%d,volume=%g[bed]" % (sr, vol))
+            bed_key = "nk%d" % key_index if bed_duck else "nar"
+            fc.append(audio_mod.clip_bed_chain(bed_input, "bed", self.cfg,
+                                               bed_key))
             mix_labels.append("bed")
         fc.append(audio_mod.final_mix(mix_labels, narration_dur, self.cfg))
 
@@ -422,13 +451,18 @@ class Renderer:
         _check_disk(self.paths["output_dir"])
 
         shots = timeline["shots"]
+        print("  Render stage: normalizing %d shot(s)…" % len(shots), flush=True)
         shot_paths = self.normalize_shots(shots, clips_by_name)
+        print("  Render stage: assembling visual timeline…", flush=True)
         main_video_raw, bed = self.assemble(shot_paths)
 
         narration_dur = timeline["duration"]
+        print("  Render stage: mixing and mastering audio…", flush=True)
         audio_mix = self.mix_audio(narration_path, music_path, bed,
                                    narration_dur)
+        print("  Render stage: preparing subtitles…", flush=True)
         main_video_burned = self.burn_subtitles(main_video_raw, subtitle_path)
+        print("  Render stage: applying final packaging…", flush=True)
         final_video, intro_dur, outro_dur = self.apply_intro_outro(
             main_video_burned)
         self.finalize(final_video, audio_mix, output_path, intro_dur,

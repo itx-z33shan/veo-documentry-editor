@@ -1,0 +1,17 @@
+{
+  "master_audio_mode": "rebuild",
+  "master_fade_seconds": 0.35,
+  "subtitle_enabled": true,
+  "subtitle_burn_in": false,
+  "loudness_target_lufs": -14.0,
+  "loudness_target_tp": -1.5,
+  "sample_rate": 48000,
+  "music_enabled": true,
+  "music_volume": 0.08,
+  "ducking_enabled": true,
+  "ducking_ratio": 8.0,
+  "ducking_attack_ms": 20,
+  "ducking_release_ms": 300,
+  "aac_bitrate": 256,
+  "faststart": true
+}

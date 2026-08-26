@@ -41,12 +41,18 @@ DEFAULTS = {
     "loop_footage": True,            # loop clips when shorter than a shot
     "max_loop_count": 20,            # safety cap on how many loops per shot
     "clip_audio_enabled": False,     # keep (quiet) original clip audio
+    "clip_audio_volume": 0.12,       # relative volume of clip audio if enabled
+    "clip_audio_ducking_enabled": True,  # lower embedded music under narration
 
     # --- Audio -----------------------------------------------------------
     "loudness_target_lufs": -14.0,
     "loudness_target_tp": -1.5,
     "loudness_lra": 11.0,
     "sample_rate": 48000,
+    # Optional explicit paths. When unset, conventional names such as
+    # input/narration.aac and music/background.m4a are auto-discovered.
+    "narration_path": None,
+    "music_path": None,
     "music_enabled": True,
     "music_volume": 0.08,
     "ducking_enabled": True,
@@ -54,7 +60,6 @@ DEFAULTS = {
     "ducking_ratio": 8.0,
     "ducking_attack_ms": 20,
     "ducking_release_ms": 300,
-    "clip_audio_volume": 0.15,       # relative volume of clip audio if enabled
 
     # --- Subtitles -------------------------------------------------------
     "subtitle_enabled": True,
@@ -91,6 +96,15 @@ DEFAULTS = {
     "preview_crf": 28,
     "preview_preset": "veryfast",
 
+    # --- Existing-export / mastering workflow -----------------------------
+    # Used by: python editor.py --master input/master.mp4
+    # preserve = master has its own final mix; replace = narration only;
+    # rebuild = clean narration + external music stem.
+    "master_audio_mode": "preserve",
+    "master_fade_seconds": 0.0,
+    "master_sync_tolerance_seconds": 0.35,
+    "master_output_name": "final_master.mp4",
+
     # --- AI layer (optional, Gemini free tier) ----------------------------
     "ai_provider": None,          # "gemini" | None (deterministic)
     "ai_api_key_env": "GEMINI_API_KEY",
@@ -100,6 +114,7 @@ DEFAULTS = {
     "ai_top_k": 5,
     "ai_max_video_bytes": 30 * 1024 * 1024,
     "ai_vector_db_path": "output/clip_vectors.json",
+    "ai_description_cache_path": "output/ai_clip_descriptions.json",
 
     # --- Paths / binaries ------------------------------------------------
     "ffmpeg_bin": "ffmpeg",
@@ -109,11 +124,6 @@ DEFAULTS = {
     "clips_dir": "clips",
     "input_dir": "input",
     "music_dir": "music",
-
-    # --- AI layer (optional, unused in v1 core) --------------------------
-    "ai_provider": None,
-    "ai_model": None,
-    "ai_api_key_env": None,
 }
 
 PACING = {
@@ -130,6 +140,7 @@ VALID_TRANSITIONS = {"cut", "crossfade"}
 VALID_FIT = {"pad", "crop"}
 VALID_STRATEGIES = {"semantic", "sequential"}
 VALID_PACING = set(PACING.keys())
+VALID_MASTER_AUDIO_MODES = {"preserve", "replace", "rebuild"}
 
 
 def _validate(v):
@@ -163,8 +174,18 @@ def _validate(v):
         raise ConfigurationError("width/height/fps must be positive")
     if not (0.0 < v["music_volume"] <= 1.0):
         raise ConfigurationError("music_volume must be in (0, 1]")
+    if not (0.0 < v["clip_audio_volume"] <= 1.0):
+        raise ConfigurationError("clip_audio_volume must be in (0, 1]")
     if v["crossfade_seconds"] < 0:
         raise ConfigurationError("crossfade_seconds must be >= 0")
+    if v["master_audio_mode"] not in VALID_MASTER_AUDIO_MODES:
+        raise ConfigurationError(
+            "master_audio_mode must be one of %s, got %r"
+            % (sorted(VALID_MASTER_AUDIO_MODES), v["master_audio_mode"]))
+    if v["master_fade_seconds"] < 0:
+        raise ConfigurationError("master_fade_seconds must be >= 0")
+    if v["master_sync_tolerance_seconds"] < 0:
+        raise ConfigurationError("master_sync_tolerance_seconds must be >= 0")
 
 
 def load_config(path=None, overrides=None):
