@@ -147,6 +147,37 @@ class RendererAudioGraphTest(unittest.TestCase):
             self.assertIn("[mus_pre][nk0]sidechaincompress", graph)
             self.assertIn("[bed_pre][nk1]sidechaincompress", graph)
 
+    def test_embedded_bed_uses_first_optional_input_without_music(self):
+        cfg = _cfg()
+        cfg.update({
+            "clip_audio_enabled": True,
+            "clip_audio_ducking_enabled": True,
+            "music_enabled": False,
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            narration = os.path.join(directory, "narration.aac")
+            unused_music = os.path.join(directory, "background.m4a")
+            bed = os.path.join(directory, "clip_bed.m4a")
+            for path in (narration, unused_music, bed):
+                with open(path, "wb") as fh:
+                    fh.write(b"x")
+            renderer = object.__new__(Renderer)
+            renderer.step1 = directory
+            renderer.ffmpeg = "ffmpeg"
+            renderer.cfg = cfg
+            renderer.clip_audio = True
+            with mock.patch("src.renderer._run_ffmpeg") as run_ffmpeg:
+                renderer.mix_audio(narration, unused_music, bed, 60.0)
+            cmd = run_ffmpeg.call_args[0][0]
+            graph = cmd[cmd.index("-filter_complex") + 1]
+            self.assertEqual(cmd.count("-i"), 2)
+            self.assertNotIn(unused_music, cmd)
+            self.assertIn(bed, cmd)
+            self.assertIn("asplit=2[nar][nk0]", graph)
+            self.assertIn("[1:a]aresample", graph)
+            self.assertIn("[bed_pre][nk0]sidechaincompress", graph)
+            self.assertNotIn("[2:a]", graph)
+
 
 class SubtitleTest(unittest.TestCase):
     def test_srt_format(self):

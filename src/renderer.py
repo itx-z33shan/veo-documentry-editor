@@ -277,12 +277,23 @@ class Renderer:
         out = os.path.join(self.step1, "audio_mix.m4a")
         cmd = [self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                "-i", narration_path]
-        has_music = bool(music_path and os.path.isfile(music_path))
+        # Inputs are optional and therefore do not have fixed FFmpeg indexes.
+        # In particular, the embedded-bed profile deliberately has no external
+        # music, making the clip bed input 1:a rather than 2:a.
+        has_music = bool(self.cfg.get("music_enabled", True) and music_path
+                         and os.path.isfile(music_path))
+        input_index = 1
+        music_input = None
         if has_music:
+            music_input = "%d:a" % input_index
             cmd += ["-stream_loop", "-1", "-i", music_path]
+            input_index += 1
         has_bed = bool(self.clip_audio and bed_path and os.path.isfile(bed_path))
+        bed_input = None
         if has_bed:
+            bed_input = "%d:a" % input_index
             cmd += ["-i", bed_path]
+            input_index += 1
 
         sr = self.cfg.get("sample_rate", 48000)
         fc = [audio_mod.normalize_narration("0:a", "nar0", self.cfg)]
@@ -303,12 +314,12 @@ class Renderer:
             music_key = "nk%d" % key_index if music_duck else "nar"
             if music_duck:
                 key_index += 1
-            fc.append(audio_mod.music_chain("1:a", "mus", narration_dur,
+            fc.append(audio_mod.music_chain(music_input, "mus", narration_dur,
                                             self.cfg, music_key))
             mix_labels.append("mus")
         if has_bed:
             bed_key = "nk%d" % key_index if bed_duck else "nar"
-            fc.append(audio_mod.clip_bed_chain("2:a", "bed", self.cfg,
+            fc.append(audio_mod.clip_bed_chain(bed_input, "bed", self.cfg,
                                                bed_key))
             mix_labels.append("bed")
         fc.append(audio_mod.final_mix(mix_labels, narration_dur, self.cfg))

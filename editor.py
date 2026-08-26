@@ -354,12 +354,16 @@ def _run(cfg, paths, preview=False, dry_run=False):
     # --- Render ----------------------------------------------------------
     print("\n[6/6] Rendering (%s)... " % mode)
     renderer = Renderer(cfg, paths, ffmpeg, prober, mode=mode)
-    music_path = find_music(paths["music_dir"], cfg.get("music_path"),
-                            required=False)
-    if cfg.get("music_enabled") and not music_path:
-        print("  WARNING: music_enabled is true but no background music file "
-              "was found; continuing without an external music stem.")
-        scan_warnings.append("Background music requested but not found.")
+    # A discovered music file must not override an explicit no-external-music
+    # profile such as veo-embedded-bed.json.
+    music_path = None
+    if cfg.get("music_enabled", True):
+        music_path = find_music(paths["music_dir"], cfg.get("music_path"),
+                                required=False)
+        if not music_path:
+            print("  WARNING: music_enabled is true but no background music file "
+                  "was found; continuing without an external music stem.")
+            scan_warnings.append("Background music requested but not found.")
     render_time = renderer.render(timeline, clips_by_name, narration_path,
                                   music_path, subtitle_path, output_path)
     for w in renderer.warnings():
