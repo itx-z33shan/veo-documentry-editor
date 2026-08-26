@@ -1,10 +1,17 @@
 # Veo Documentary Editor — pure standard-library orchestration.
 # No Python dependencies are required for the core pipeline.
 #
-# The only external requirements are the FFmpeg and FFprobe binaries,
-# which must be installed on the system and available on PATH
-# (or configured via config.json: ffmpeg_bin / ffprobe_bin).
+# The only hard requirements are the FFmpeg binaries (ffmpeg + ffprobe),
+# available on PATH (or configured via config.json: ffmpeg_bin/ffprobe_bin).
+#   Debian/Ubuntu:  sudo apt-get install ffmpeg
+#   macOS (brew):   brew install ffmpeg
+#   Windows:        https://ffmpeg.org/download.html
+
+# ---------------------------------------------------------------------------
+# OPTIONAL dependency — the Gemini AI intelligence layer.
+# Only needed if you enable "ai_provider": "gemini" in config.json and set
+# a GEMINI_API_KEY (free tier: https://aistudio.google.com/apikey).
+# The core editor works fully without it (deterministic matching).
 #
-# Install on Debian/Ubuntu:  sudo apt-get install ffmpeg
-# Install on macOS (brew):   brew install ffmpeg
-# Windows:                   download from https://ffmpeg.org/download.html
+#   pip install google-genai
+# ---------------------------------------------------------------------------

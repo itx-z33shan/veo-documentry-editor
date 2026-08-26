@@ -91,6 +91,16 @@ DEFAULTS = {
     "preview_crf": 28,
     "preview_preset": "veryfast",
 
+    # --- AI layer (optional, Gemini free tier) ----------------------------
+    "ai_provider": None,          # "gemini" | None (deterministic)
+    "ai_api_key_env": "GEMINI_API_KEY",
+    "ai_vision_model": None,      # None => "models/gemini-3.7-flash"
+    "ai_embedding_model": None,   # None => "models/gemini-embedding-2"
+    "ai_decision_model": None,    # None => "models/gemini-3.1-pro-preview"
+    "ai_top_k": 5,
+    "ai_max_video_bytes": 30 * 1024 * 1024,
+    "ai_vector_db_path": "output/clip_vectors.json",
+
     # --- Paths / binaries ------------------------------------------------
     "ffmpeg_bin": "ffmpeg",
     "ffprobe_bin": "ffprobe",

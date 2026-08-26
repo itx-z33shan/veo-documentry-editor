@@ -151,6 +151,36 @@ def _any_semantic_signal(mapping, clips):
     return False
 
 
+def assign_clips_with_ai(scenes, clips, cfg, existing_metadata=None,
+                         vector_store=None):
+    """INTELLIGENCE via the optional Gemini layer.
+
+    Wraps ``src.ai.GeminiAI``. If AI is unavailable or fails, returns the
+    deterministic mapping plus warnings. ``vector_store`` is a
+    ``src.vectorstore.VectorStore`` (created if None).
+    """
+    from .ai import GeminiAI
+    from .vectorstore import VectorStore
+
+    ai = GeminiAI(cfg)
+    if not ai.available():
+        return assign_clips_to_scenes(scenes, clips, cfg), \
+            ["AI not available (no key/SDK); using deterministic matching."]
+
+    db_path = cfg.get("ai_vector_db_path") or "output/clip_vectors.json"
+    store = vector_store or VectorStore(db_path).load()
+
+    try:
+        mapping, _descriptions = ai.assign_scenes(
+            scenes, clips, existing_metadata or {}, store)
+    except Exception as exc:  # noqa: BLE001
+        mapping = assign_clips_to_scenes(scenes, clips, cfg)
+        return mapping, ["AI pipeline failed (%s); using deterministic "
+                         "matching." % exc]
+
+    return mapping, ai.warnings
+
+
 def summarize(mapping):
     """Human-readable summary for reports: scene -> assigned clip count."""
     return {k: len(v) for k, v in mapping.items()}

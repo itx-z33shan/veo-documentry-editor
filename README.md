@@ -132,9 +132,76 @@ veo_documentary_editor/
 │   ├── audio.py              # mixing graph + ducking + loudnorm
 │   ├── renderer.py           # FFmpeg execution (EXECUTION)
 │   ├── overrides.py          # manual timeline overrides
-│   └── reporter.py           # timeline.txt + edit_report.json
+│   ├── reporter.py           # timeline.txt + edit_report.json
+│   ├── ai.py                 # optional Gemini AI layer (clip desc, decisions)
+│   └── vectorstore.py        # tiny local vector DB (cosine retrieval)
 └── tests/
 ```
+
+---
+
+## Optional Gemini AI intelligence layer
+
+The editor runs entirely locally and deterministically by default. You can
+optionally enable an AI intelligence layer backed by Google's **Gemini free
+tier** that improves clip→scene matching. It follows this pipeline:
+
+```
+Veo clips ──Gemini 3.7 Flash──▶ clip descriptions
+descriptions ──Gemini Embedding 2──▶ embeddings ──▶ local vector DB
+narration ──▶ scene requirements ──semantic retrieval──▶ top-5 candidates
+candidates ──Gemini 3.1 Pro──▶ final ordered decisions
+decisions ──[validated]──▶ timeline ──▶ FFmpeg
+```
+
+### Enable it
+
+1. Install the optional SDK:
+   ```bash
+   pip install google-genai
+   ```
+2. Set a free-tier API key:
+   ```bash
+   export GEMINI_API_KEY=your_key   # from https://aistudio.google.com/apikey
+   ```
+3. In `config.json`:
+   ```jsonc
+   {
+     "ai_provider": "gemini",
+     "ai_api_key_env": "GEMINI_API_KEY",
+     "ai_vision_model": "models/gemini-3.7-flash",      // clip descriptions
+     "ai_embedding_model": "models/gemini-embedding-2",  // embeddings
+     "ai_decision_model": "models/gemini-3.1-pro-preview", // final picks
+     "ai_top_k": 5,
+     "ai_max_video_bytes": 31457280,
+     "ai_vector_db_path": "output/clip_vectors.json"
+   }
+   ```
+
+How it works:
+
+* **Clip descriptions** — clips you already described in
+  `clips/metadata.json` are reused (zero API cost); the rest are sent to the
+  Gemini vision model for a factual 1–2 sentence description + tags.
+* **Local vector DB** — descriptions are embedded and cached in
+  `output/clip_vectors.json` (a tiny zero-dependency flat-file store with
+  cosine retrieval). Stale entries are invalidated automatically.
+* **Semantic retrieval** — each scene's narration text + derived keywords are
+  embedded and the top-`k` clips are recalled per scene.
+* **Final decisions** — the Gemini decision model orders those candidates for
+  each scene, and the results are **validated** (only real clip filenames,
+  deduped, ordered) before they become part of the timeline.
+* **Safety** — the AI only ever produces *structured editing decisions*; it
+  never touches raw FFmpeg commands, and it never overrides a manual
+  `timeline_override.json`. If the SDK, key, or any call fails, the editor
+  warns and falls back to deterministic matching. The pipeline works fully
+  with `ai_provider: null`.
+
+Available Gemini free-tier model names (defaults are picked from these):
+
+* `models/gemini-3.7-flash` — vision / clip descriptions
+* `models/gemini-embedding-2` — embeddings
+* `models/gemini-3.1-pro-preview`, `models/gemini-3.5-flash`, etc. — decisions
 
 ---
 

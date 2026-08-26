@@ -29,7 +29,7 @@ from src.errors import EditorError, MediaNotFoundError, NoClipsError, \
 from src.media import Probe, resolve_binaries, ffmpeg_version
 from src.scanner import scan_clips, load_clip_metadata
 from src.script import segment_scenes, find_script
-from src.matcher import assign_clips_to_scenes
+from src.matcher import assign_clips_to_scenes, assign_clips_with_ai
 from src.timeline import build_timeline
 from src.subtitles import write_srt, write_ass, has_text
 from src.overrides import load_overrides, apply_overrides
@@ -152,12 +152,22 @@ def _run(cfg, paths, preview=False, dry_run=False):
 
     # --- Match clips to scenes ------------------------------------------
     print("\n[4/6] Matching clips to scenes...")
+    use_ai = cfg.get("ai_provider") == "gemini"
     if scenes is None:
         from src.timeline import _default_scene
         scenes = _default_scene(dur)
-        clip_map = assign_clips_to_scenes(scenes, clips, cfg)
+
+    if use_ai:
+        print("  Using Gemini AI intelligence layer...")
+        clip_map, ai_warnings = assign_clips_with_ai(scenes, clips, cfg,
+                                                     metadata)
+        for w in ai_warnings:
+            print("  AI: %s" % w)
+            scan_warnings.append("AI: " + w)
     else:
         clip_map = assign_clips_to_scenes(scenes, clips, cfg)
+
+    if scenes and not use_ai:
         for sc in scenes:
             n = len(clip_map.get(sc["index"], []))
             print("  %s  -> %d candidate clip(s)" % (sc["title"], n))
