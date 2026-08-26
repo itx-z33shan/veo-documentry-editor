@@ -1,0 +1,10 @@
+# Veo Documentary Editor — pure standard-library orchestration.
+# No Python dependencies are required for the core pipeline.
+#
+# The only external requirements are the FFmpeg and FFprobe binaries,
+# which must be installed on the system and available on PATH
+# (or configured via config.json: ffmpeg_bin / ffprobe_bin).
+#
+# Install on Debian/Ubuntu:  sudo apt-get install ffmpeg
+# Install on macOS (brew):   brew install ffmpeg
+# Windows:                   download from https://ffmpeg.org/download.html

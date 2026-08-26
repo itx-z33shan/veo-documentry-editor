@@ -1,0 +1,40 @@
+{
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+
+  "video_codec": "libx264",
+  "crf": 18,
+  "preset": "medium",
+
+  "pacing": "normal",
+  "min_clip_seconds": null,
+  "preferred_clip_seconds": null,
+  "max_clip_seconds": null,
+
+  "transition": "cut",
+  "crossfade_seconds": 0.3,
+
+  "fit": "pad",
+
+  "clip_strategy": "semantic",
+  "fallback_strategy": "sequential",
+  "loop_footage": true,
+
+  "music_enabled": true,
+  "music_volume": 0.08,
+  "ducking_enabled": true,
+
+  "subtitle_enabled": true,
+  "subtitle_burn_in": false,
+
+  "intro_enabled": false,
+  "outro_enabled": false,
+
+  "loudness_target_lufs": -14.0,
+  "loudness_target_tp": -1.5,
+  "sample_rate": 48000,
+  "aac_bitrate": 192,
+
+  "faststart": true
+}

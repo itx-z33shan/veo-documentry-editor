@@ -1,0 +1,24 @@
+# Never commit generated/rendered media or temporary files.
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# Generated outputs
+output/*
+!output/.gitkeep
+
+# Intermediate render files
+temp/
+
+# Optional user data (source media)
+clips/*
+!clips/.gitkeep
+input/*
+!input/.gitkeep
+music/*
+!music/.gitkeep
+
+# Example metadata / overrides stay available as templates
+# (clip metadata and overrides are committed, see examples/)
