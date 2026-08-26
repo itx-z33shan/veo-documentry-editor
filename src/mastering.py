@@ -257,6 +257,7 @@ class MasterFinisher:
         output_path = os.path.abspath(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         cmd = self.build_command(plan, output_path)
+        print("  Master render: encoding final audio/video package…", flush=True)
         started = time.time()
         _run_ffmpeg(cmd, "finishing existing master video")
         elapsed = time.time() - started

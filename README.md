@@ -116,6 +116,39 @@ python editor.py --help
 
 ---
 
+## Local finishing dashboard
+
+Prefer a guided browser workflow instead of typing commands? Launch the
+built-in local dashboard—no Flask, Node, cloud upload, or additional Python
+package is required:
+
+```bash
+python web.py
+```
+
+Then open **http://127.0.0.1:8765** in your browser. It provides a five-step
+wizard:
+
+1. choose Finished CapCut Master, Raw Clips + Voice, or Clean Stem Rebuild;
+2. drag/drop the master, AAC narration, transcript/SRT, and optional clips or
+   music;
+3. choose safe YouTube/Facebook finishing settings;
+4. run a dry check, see live editor/FFmpeg logs, then start the render; and
+5. preview/download the MP4, SRT, and JSON report.
+
+The dashboard is intentionally **local-only by default** and has no login.
+Keep it on `127.0.0.1` for normal use. It runs only structured workflows and
+safe configuration fields—never browser-supplied FFmpeg commands or API keys.
+For a trusted LAN or an Arena preview you can explicitly bind another host:
+
+```bash
+python web.py --host 0.0.0.0 --port 8000
+```
+
+Do not expose that unauthenticated mode directly to the public internet.
+
+---
+
 ## Finishing an existing CapCut master (recommended for your current case)
 
 If you already have an 11-minute CapCut export with its 70+ visual edits and
@@ -212,6 +245,8 @@ on both phone/laptop speakers and headphones.
 ```
 veo_documentary_editor/
 ├── editor.py            # CLI orchestration
+├── web.py               # local browser dashboard launcher
+├── web/static/          # guided dashboard HTML/CSS/JS (no Node required)
 ├── config.json          # configuration (everything is tunable)
 ├── requirements.txt     # (no Python deps required)
 ├── README.md
@@ -232,6 +267,7 @@ veo_documentary_editor/
 │   ├── media.py              # ffprobe/ffmpeg discovery + probing
 │   ├── inputs.py             # flexible .aac/.m4a/.mp3/.wav input discovery
 │   ├── mastering.py          # safe finishing of one existing video master
+│   ├── dashboard.py          # local upload/inspection/render web API
 │   ├── scanner.py            # clips scan -> media manifest
 │   ├── script.py             # scene segmentation (deterministic)
 │   ├── matcher.py            # clip→scene assignment (INTELLIGENCE)

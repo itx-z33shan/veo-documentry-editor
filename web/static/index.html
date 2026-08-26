@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10151f">
+  <title>Veo Finalize — Local Documentary Finishing</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <main class="app-shell">
+    <aside class="sidebar" aria-label="Workflow steps">
+      <a class="brand" href="/" aria-label="Veo Finalize home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>
+          <strong>VEO</strong>
+          <em>FINALIZE</em>
+        </span>
+      </a>
+
+      <div class="project-label">
+        <span class="eyebrow">LOCAL-FIRST WORKSPACE</span>
+        <strong>Documentary finish</strong>
+        <span>Media stays on this machine</span>
+      </div>
+
+      <nav class="steps" aria-label="Finishing workflow">
+        <button class="step-link is-active" data-go-step="1" type="button">
+          <span class="step-number">01</span><span>Choose workflow</span>
+        </button>
+        <button class="step-link" data-go-step="2" type="button">
+          <span class="step-number">02</span><span>Add media</span>
+        </button>
+        <button class="step-link" data-go-step="3" type="button">
+          <span class="step-number">03</span><span>Set finish</span>
+        </button>
+        <button class="step-link" data-go-step="4" type="button">
+          <span class="step-number">04</span><span>Review &amp; render</span>
+        </button>
+        <button class="step-link" data-go-step="5" type="button">
+          <span class="step-number">05</span><span>Deliver</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <span class="status-dot" id="sidebar-status-dot"></span>
+        <span id="sidebar-status">Checking FFmpeg…</span>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">POST-PRODUCTION CONTROL ROOM</p>
+          <h1 id="page-title">Choose the safest route</h1>
+        </div>
+        <div class="health-chip" id="health-chip" role="status">
+          <span class="status-dot"></span>
+          <span>Inspecting local tools…</span>
+        </div>
+      </header>
+
+      <div class="flash" id="flash" role="alert" aria-live="polite"></div>
+
+      <section class="step-panel is-active" data-step="1">
+        <div class="intro-grid">
+          <div>
+            <p class="kicker">STEP 01 / SOURCE TOPOLOGY</p>
+            <h2>Start with the edit you already trust.</h2>
+            <p class="lede">Pick how your footage and audio currently exist. The dashboard protects you from the most common mistake: adding a clean narration over the same voice already baked into a CapCut export.</p>
+          </div>
+          <aside class="tip-card">
+            <span class="tip-icon">✦</span>
+            <div>
+              <strong>For your current 11-minute CapCut export</strong>
+              <p>Choose <b>Finished CapCut master</b>. Its existing mix stays intact; your AAC is used only as a sync reference.</p>
+            </div>
+          </aside>
+        </div>
+
+        <div class="workflow-grid" role="list">
+          <button class="workflow-card is-selected" type="button" data-workflow="master-preserve" role="listitem">
+            <span class="workflow-icon icon-master">◉</span>
+            <span class="workflow-copy">
+              <span class="card-topline"><b>RECOMMENDED</b><span>Safest</span></span>
+              <strong>Finished CapCut master</strong>
+              <small>Keep your approved visuals and baked music + narration mix. Master it safely.</small>
+            </span>
+            <span class="card-arrow">→</span>
+          </button>
+
+          <button class="workflow-card" type="button" data-workflow="clips-embedded" role="listitem">
+            <span class="workflow-icon icon-clips">▦</span>
+            <span class="workflow-copy">
+              <span class="card-topline"><b>SOURCE EDIT</b><span>70+ clips</span></span>
+              <strong>Raw clips + clean voice</strong>
+              <small>Assemble source Veo/CapCut clips, retain their quiet ambience, then add narration.</small>
+            </span>
+            <span class="card-arrow">→</span>
+          </button>
+
+          <button class="workflow-card" type="button" data-workflow="master-rebuild" role="listitem">
+            <span class="workflow-icon icon-stems">≋</span>
+            <span class="workflow-copy">
+              <span class="card-topline"><b>CLEAN STEMS</b><span>Advanced</span></span>
+              <strong>Rebuild from voice + music</strong>
+              <small>Use only when narration and music are supplied as separate clean files.</small>
+            </span>
+            <span class="card-arrow">→</span>
+          </button>
+
+          <button class="workflow-card workflow-card-muted" type="button" data-workflow="master-replace" role="listitem">
+            <span class="workflow-icon icon-voice">⌁</span>
+            <span class="workflow-copy">
+              <span class="card-topline"><b>VOICE ONLY</b><span>Special case</span></span>
+              <strong>Replace master audio</strong>
+              <small>Remove the existing mix and use narration only. No music will remain.</small>
+            </span>
+            <span class="card-arrow">→</span>
+          </button>
+        </div>
+
+        <div class="recommendation-card" id="recommendation-card">
+          <div class="recommendation-orb">✓</div>
+          <div>
+            <span class="eyebrow">MEDIA-AWARE RECOMMENDATION</span>
+            <strong id="recommendation-title">Finished CapCut master is the safe default.</strong>
+            <p id="recommendation-reason">Add files in the next step and the dashboard will inspect the audio topology before rendering.</p>
+          </div>
+        </div>
+
+        <div class="panel-actions align-right">
+          <button class="button button-primary" type="button" data-next-step="2">Continue to media <span>→</span></button>
+        </div>
+      </section>
+
+      <section class="step-panel" data-step="2" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="kicker">STEP 02 / MEDIA INTAKE</p>
+            <h2>Bring in the approved assets.</h2>
+            <p>Files are copied into ignored local workspace folders. They are never added to Git by this dashboard.</p>
+          </div>
+          <button class="text-button" id="refresh-media" type="button">↻ Refresh inspection</button>
+        </div>
+
+        <form id="upload-form" class="upload-layout" novalidate>
+          <div class="upload-grid">
+            <label class="upload-card workflow-master-field">
+              <input id="master-file" name="master" type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.mkv,.webm,.m4v">
+              <span class="upload-symbol">▣</span>
+              <span class="upload-title">Finished master video <b>Required</b></span>
+              <span class="upload-help">Your CapCut exported MP4, MOV, MKV, WebM, or M4V.</span>
+              <span class="file-choice" data-for="master-file">Choose a video file</span>
+            </label>
+
+            <label class="upload-card workflow-clips-field" hidden>
+              <input id="clips-file" name="clips" type="file" multiple accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.mkv,.webm,.m4v">
+              <span class="upload-symbol">▦</span>
+              <span class="upload-title">Source clips <b>Required</b></span>
+              <span class="upload-help">Select all Veo or CapCut source clips at once.</span>
+              <span class="file-choice" data-for="clips-file">Choose one or more clips</span>
+            </label>
+
+            <label class="upload-card">
+              <input id="narration-file" name="narration" type="file" accept="audio/aac,audio/mpeg,audio/mp4,audio/wav,audio/flac,audio/ogg,.aac,.m4a,.mp3,.wav,.flac,.ogg,.opus,.aiff">
+              <span class="upload-symbol">◌</span>
+              <span class="upload-title">ElevenLabs narration <b class="narration-requirement">Reference</b></span>
+              <span class="upload-help">AAC, M4A, MP3, WAV, FLAC, OGG, or Opus. Required for raw clips and clean-stem workflows.</span>
+              <span class="file-choice" data-for="narration-file">Choose narration audio</span>
+            </label>
+
+            <label class="upload-card workflow-music-field" hidden>
+              <input id="music-file" name="music" type="file" accept="audio/aac,audio/mpeg,audio/mp4,audio/wav,audio/flac,audio/ogg,.aac,.m4a,.mp3,.wav,.flac,.ogg,.opus,.aiff">
+              <span class="upload-symbol">≋</span>
+              <span class="upload-title">Separate music stem <b>Required</b></span>
+              <span class="upload-help">Use a clean music-only file; never upload a CapCut master here.</span>
+              <span class="file-choice" data-for="music-file">Choose music audio</span>
+            </label>
+
+            <label class="upload-card upload-card-wide">
+              <input id="transcript-file" name="transcript" type="file" accept="text/plain,.txt,.srt">
+              <span class="upload-symbol">¶</span>
+              <span class="upload-title">Final transcript or SRT <b>Recommended</b></span>
+              <span class="upload-help">TXT creates a reviewable SRT draft. An existing time-coded SRT is copied unchanged.</span>
+              <span class="file-choice" data-for="transcript-file">Choose transcript or SRT</span>
+            </label>
+          </div>
+
+          <div class="upload-options workflow-clips-field" hidden>
+            <label class="toggle-row"><input id="replace-clips" type="checkbox" checked><span class="toggle-ui"></span><span><b>Replace existing source clips</b><small>Safer for a new project; only supported video files in <code>clips/</code> are replaced.</small></span></label>
+          </div>
+
+          <div class="upload-progress" id="upload-progress" hidden>
+            <div><span id="upload-progress-label">Uploading assets…</span><b id="upload-progress-value">0%</b></div>
+            <div class="progress-track"><span id="upload-progress-bar"></span></div>
+          </div>
+
+          <div class="panel-actions">
+            <button class="button button-secondary" type="button" data-prev-step="1">← Back</button>
+            <button class="button button-primary" id="upload-button" type="submit">Save &amp; inspect media <span>↑</span></button>
+          </div>
+        </form>
+
+        <section class="media-inventory" aria-live="polite">
+          <div class="inventory-heading"><span class="eyebrow">LOCAL WORKSPACE</span><span id="inspection-note">Waiting for files…</span></div>
+          <div class="inventory-grid" id="media-summary"></div>
+        </section>
+
+        <div class="panel-actions align-right">
+          <button class="button button-primary" type="button" data-next-step="3">Continue to finishing <span>→</span></button>
+        </div>
+      </section>
+
+      <section class="step-panel" data-step="3" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="kicker">STEP 03 / FINISH SETTINGS</p>
+            <h2>Set a platform-safe final pass.</h2>
+            <p>The defaults are intentionally conservative for a narrated YouTube and Facebook documentary.</p>
+          </div>
+          <span class="preset-chip">YOUTUBE + FACEBOOK / 1080P</span>
+        </div>
+
+        <div class="settings-layout">
+          <section class="settings-card settings-card-primary">
+            <div class="settings-card-head"><span class="settings-icon">◉</span><div><h3>Delivery audio</h3><p>Master the complete output—not only the voice stem.</p></div></div>
+            <div class="field-grid">
+              <label class="field"><span>Integrated loudness</span><div class="unit-input"><input id="loudness-target" type="number" min="-24" max="-10" step="0.5" value="-14"><b>LUFS</b></div><small>−14 is a sensible web delivery target.</small></label>
+              <label class="field"><span>True peak ceiling</span><div class="unit-input"><input id="true-peak" type="number" min="-3" max="-0.1" step="0.1" value="-1.5"><b>dBTP</b></div><small>Provides upload/re-encode headroom.</small></label>
+              <label class="field"><span>AAC bitrate</span><div class="unit-input"><input id="aac-bitrate" type="number" min="96" max="512" step="32" value="256"><b>kbps</b></div><small>48 kHz stereo AAC is used for delivery.</small></label>
+            </div>
+          </section>
+
+          <section class="settings-card workflow-master-setting">
+            <div class="settings-card-head"><span class="settings-icon">◐</span><div><h3>Master finishing</h3><p>Keep all individual CapCut cuts and transitions intact.</p></div></div>
+            <label class="range-field"><span>Opening &amp; closing fade</span><output id="fade-output">0.35 sec</output><input id="master-fade" type="range" min="0" max="2" step="0.05" value="0.35"><small>A short synchronized audio/video fade. Set to 0 to stream-copy the video visual track.</small></label>
+          </section>
+
+          <section class="settings-card workflow-clips-setting" hidden>
+            <div class="settings-card-head"><span class="settings-icon">▦</span><div><h3>Source clip handling</h3><p>Use restrained edits when the source clips contain generated audio.</p></div></div>
+            <div class="choice-stack">
+              <label class="toggle-row"><input id="keep-clip-audio" type="checkbox" checked><span class="toggle-ui"></span><span><b>Keep quiet embedded clip audio</b><small>Useful for Veo ambience or background music below narration.</small></span></label>
+              <label class="field compact"><span>Clip audio level</span><div class="unit-input"><input id="clip-audio-volume" type="number" min="0.01" max="0.5" step="0.01" value="0.12"><b>gain</b></div></label>
+              <label class="field compact"><span>Transition style</span><select id="transition"><option value="cut" selected>Hard cut — recommended</option><option value="crossfade">Crossfade</option></select><small id="transition-help">Hard cuts avoid breaking embedded clip audio.</small></label>
+            </div>
+          </section>
+
+          <section class="settings-card workflow-music-setting" hidden>
+            <div class="settings-card-head"><span class="settings-icon">≋</span><div><h3>Music under narration</h3><p>Use a separate clean music stem for controlled ducking.</p></div></div>
+            <div class="field-grid field-grid-two">
+              <label class="field"><span>Music level</span><div class="unit-input"><input id="music-volume" type="number" min="0.01" max="0.5" step="0.01" value="0.08"><b>gain</b></div></label>
+              <label class="toggle-row compact-toggle"><input id="ducking" type="checkbox" checked><span class="toggle-ui"></span><span><b>Auto-duck under voice</b><small>Music recovers naturally in pauses.</small></span></label>
+            </div>
+          </section>
+
+          <section class="settings-card captions-card">
+            <div class="settings-card-head"><span class="settings-icon">¶</span><div><h3>Captions</h3><p>Deliver an upload-ready SRT sidecar; do not burn it into the approved master.</p></div></div>
+            <label class="toggle-row"><input id="subtitles" type="checkbox" checked><span class="toggle-ui"></span><span><b>Generate or copy subtitles.srt</b><small>TXT transcript timing must be reviewed. A supplied SRT keeps its timings.</small></span></label>
+          </section>
+        </div>
+
+        <div class="panel-actions">
+          <button class="button button-secondary" type="button" data-prev-step="2">← Back</button>
+          <button class="button button-primary" type="button" data-next-step="4">Review render plan <span>→</span></button>
+        </div>
+      </section>
+
+      <section class="step-panel" data-step="4" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="kicker">STEP 04 / REVIEW &amp; RENDER</p>
+            <h2>Validate first. Render once.</h2>
+            <p>Start with a dry run to inspect the file topology, subtitle plan, and safety warnings. Then create the final master.</p>
+          </div>
+          <span class="workflow-pill" id="review-workflow">Finished CapCut master</span>
+        </div>
+
+        <div class="review-grid">
+          <section class="review-card review-summary">
+            <span class="eyebrow">YOUR PLAN</span>
+            <div id="review-summary"></div>
+          </section>
+          <section class="review-card safety-card">
+            <span class="eyebrow">GUARDRAIL</span>
+            <strong id="safety-title">No duplicate narration</strong>
+            <p id="safety-copy">Preserve mode keeps embedded master audio and uses your separate AAC only as a duration/sync reference.</p>
+          </section>
+        </div>
+
+        <div class="render-controls">
+          <button class="button button-secondary" type="button" data-prev-step="3">← Back</button>
+          <div class="render-actions">
+            <button class="button button-quiet" id="dry-run-button" type="button">Run safe dry check</button>
+            <button class="button button-primary" id="render-button" type="button" disabled>Start final render <span>▶</span></button>
+            <button class="button button-danger" id="cancel-button" type="button" hidden>Cancel render</button>
+          </div>
+        </div>
+
+        <section class="job-console" aria-live="polite">
+          <div class="console-head"><div><span class="console-led" id="console-led"></span><b id="job-status">Waiting for a dry run</b></div><span id="job-stage">No process active</span></div>
+          <pre id="job-log">The console will show FFmpeg/editor progress here.</pre>
+        </section>
+
+        <div class="panel-actions align-right">
+          <button class="button button-primary" id="go-deliver-button" type="button" data-go-step="5" disabled>View deliverables <span>→</span></button>
+        </div>
+      </section>
+
+      <section class="step-panel" data-step="5" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="kicker">STEP 05 / DELIVER</p>
+            <h2>Your final assets are ready.</h2>
+            <p>Watch the full master once before publishing, then upload the MP4 and matching SRT to YouTube and Facebook.</p>
+          </div>
+          <button class="text-button" id="refresh-results" type="button">↻ Refresh files</button>
+        </div>
+
+        <div class="result-layout">
+          <section class="video-result" id="video-result">
+            <div class="video-empty"><span>▶</span><strong>Final video preview</strong><p>Complete a render to preview the delivery master here.</p></div>
+          </section>
+          <section class="deliverables-card">
+            <span class="eyebrow">OUTPUT FOLDER</span>
+            <div id="deliverables-list" class="deliverables-list"><p class="muted">No render outputs yet.</p></div>
+          </section>
+        </div>
+
+        <section class="qc-checklist">
+          <span class="eyebrow">FINAL HUMAN CHECK</span>
+          <div class="qc-items">
+            <label><input type="checkbox"><span>Watch the complete video, including the final minute, for narration sync.</span></label>
+            <label><input type="checkbox"><span>Check names, numbers, pauses, and the final cue in <code>subtitles.srt</code>.</span></label>
+            <label><input type="checkbox"><span>Listen on headphones and phone/laptop speakers for voice clarity and abrupt clip-music changes.</span></label>
+          </div>
+        </section>
+
+        <div class="panel-actions">
+          <button class="button button-secondary" type="button" data-go-step="1">Start another project</button>
+          <a class="button button-primary" id="open-report" href="#" hidden target="_blank" rel="noopener">Open render report <span>↗</span></a>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -165,11 +165,15 @@ class Renderer:
             if (not self.cfg.get("force", False)
                     and _needs_skip(marker, key)):
                 self._log.append("reuse shot %04d (%s)" % (i, shot["clip"]))
+                print("  Render progress: shot %d/%d reused (%s)" %
+                      (i + 1, n, shot["clip"]), flush=True)
                 continue
 
             _check_disk(self.step1)
             self._render_shot(shot, clip, length, vf, out)
             _write_marker(marker, key)
+            print("  Render progress: shot %d/%d complete (%s)" %
+                  (i + 1, n, shot["clip"]), flush=True)
         return out_paths
 
     def _render_shot(self, shot, clip, length, vf, out):
@@ -427,13 +431,18 @@ class Renderer:
         _check_disk(self.paths["output_dir"])
 
         shots = timeline["shots"]
+        print("  Render stage: normalizing %d shot(s)…" % len(shots), flush=True)
         shot_paths = self.normalize_shots(shots, clips_by_name)
+        print("  Render stage: assembling visual timeline…", flush=True)
         main_video_raw, bed = self.assemble(shot_paths)
 
         narration_dur = timeline["duration"]
+        print("  Render stage: mixing and mastering audio…", flush=True)
         audio_mix = self.mix_audio(narration_path, music_path, bed,
                                    narration_dur)
+        print("  Render stage: preparing subtitles…", flush=True)
         main_video_burned = self.burn_subtitles(main_video_raw, subtitle_path)
+        print("  Render stage: applying final packaging…", flush=True)
         final_video, intro_dur, outro_dur = self.apply_intro_outro(
             main_video_burned)
         self.finalize(final_video, audio_mix, output_path, intro_dur,
