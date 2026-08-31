@@ -144,7 +144,10 @@
             <h2>Bring in the approved assets.</h2>
             <p>Files are copied into ignored local workspace folders. They are never added to Git by this dashboard.</p>
           </div>
-          <button class="text-button" id="refresh-media" type="button">↻ Refresh inspection</button>
+          <div class="heading-actions">
+            <span class="heading-note" id="intake-note">No clips queued.</span>
+            <button class="text-button" id="refresh-media" type="button">↻ Refresh inspection</button>
+          </div>
         </div>
 
         <form id="upload-form" class="upload-layout" novalidate>
@@ -157,13 +160,20 @@
               <span class="file-choice" data-for="master-file">Choose a video file</span>
             </label>
 
-            <label class="upload-card workflow-clips-field" hidden>
+            <div class="upload-card upload-card-queue workflow-clips-field" id="clips-card">
               <input id="clips-file" name="clips" type="file" multiple accept="video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.mkv,.webm,.m4v">
+              <input id="clips-folder" name="clips-folder" type="file" webkitdirectory directory multiple>
               <span class="upload-symbol">▦</span>
-              <span class="upload-title">Source clips <b>Required</b></span>
-              <span class="upload-help">Select all Veo or CapCut source clips at once.</span>
-              <span class="file-choice" data-for="clips-file">Choose one or more clips</span>
-            </label>
+              <span class="upload-title">Source clips folder <b>Required</b></span>
+              <span class="upload-help">Pick the folder that holds your Veo or CapCut clips. Every supported video file inside it — subfolders included — is queued in natural clip order, so you never add footage one file at a time.</span>
+              <span class="upload-actions">
+                <button class="button button-mini button-primary" type="button" id="pick-clips-folder">Choose folder</button>
+                <button class="button button-mini" type="button" id="pick-clip-files">Choose files</button>
+                <button class="text-button" type="button" id="clear-clips" hidden>Clear queue</button>
+              </span>
+              <span class="file-choice" id="clips-choice">Choose a folder, or drop one here</span>
+              <div class="clip-queue" id="clips-queue" hidden></div>
+            </div>
 
             <label class="upload-card">
               <input id="narration-file" name="narration" type="file" accept="audio/aac,audio/mpeg,audio/mp4,audio/wav,audio/flac,audio/ogg,.aac,.m4a,.mp3,.wav,.flac,.ogg,.opus,.aiff">
@@ -191,12 +201,13 @@
           </div>
 
           <div class="upload-options workflow-clips-field" hidden>
-            <label class="toggle-row"><input id="replace-clips" type="checkbox" checked><span class="toggle-ui"></span><span><b>Replace existing source clips</b><small>Safer for a new project; only supported video files in <code>clips/</code> are replaced.</small></span></label>
+            <label class="toggle-row"><input id="replace-clips" type="checkbox" checked><span class="toggle-ui"></span><span><b>Replace existing source clips</b><small>Safer for a new project; only supported video files in <code>clips/</code> are replaced. Turn this off to append a folder to the clips already in the workspace.</small></span></label>
           </div>
 
           <div class="upload-progress" id="upload-progress" hidden>
             <div><span id="upload-progress-label">Uploading assets…</span><b id="upload-progress-value">0%</b></div>
             <div class="progress-track"><span id="upload-progress-bar"></span></div>
+            <button class="text-button upload-cancel" type="button" id="upload-cancel" hidden>Stop after the current file</button>
           </div>
 
           <div class="panel-actions">
@@ -356,6 +367,7 @@
     </section>
   </main>
 
+  <script src="/static/clips-folder.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

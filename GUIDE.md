@@ -100,6 +100,17 @@ Watch `final_master.mp4` end to end, check `subtitles.srt` cue timing
 
 ## Step 1 — Put the 70 clips in `clips/`
 
+> 💡 **In the browser dashboard you never move or rename files by hand.**
+> In Step 02 of the wizard, **Choose folder** (or dropping a folder on the
+> clip card) queues every MP4/MOV/MKV/WebM/M4V inside it — subfolders
+> included — in natural sort order, ignoring poster images, `.DS_Store`,
+> `._*` AppleDouble files and empty stubs. Two identically named clips in
+> different subfolders are stored apart (`batch-b_014.mp4`) instead of one
+> silently replacing the other, an optional top-level `clips/metadata.json`
+> travels with them, and re-picking the same folder only uploads what is
+> missing when **Replace existing source clips** is off. See
+> *Queue a whole clip folder* in the README for the exact rules.
+
 Rename the Veo 3 downloads so natural sort order = your story order:
 
 ```text

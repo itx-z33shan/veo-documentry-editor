@@ -43,6 +43,10 @@ CHUNK_SIZE = 1024 * 1024
 
 TEXT_EXTENSIONS = {".txt", ".srt"}
 VIDEO_EXTENSIONS = set(SUPPORTED_VIDEO_EXTS)
+# An optional sidecar that ships inside exported clip folders and drives
+# semantic scene matching (see src/scanner.py::load_clip_metadata).
+CLIP_METADATA_NAME = "metadata.json"
+MAX_CLIP_METADATA_BYTES = 1024 * 1024
 
 WORKFLOWS = {
     "master-preserve": {
@@ -124,6 +128,23 @@ def _number(settings, key, default, minimum, maximum):
         raise DashboardError("%s must be between %s and %s." %
                              (key, minimum, maximum))
     return value
+
+
+def _validate_clip_metadata(path: Path):
+    """Reject a metadata.json that the editor could not consume later.
+
+    Checking the temp copy keeps a broken sidecar from replacing a good one.
+    """
+    if path.stat().st_size > MAX_CLIP_METADATA_BYTES:
+        raise DashboardError("Clip metadata must be %s or smaller."
+                             % _human_bytes(MAX_CLIP_METADATA_BYTES))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DashboardError("Clips metadata.json must be UTF-8 JSON: %s" % exc)
+    if not isinstance(data, dict):
+        raise DashboardError("Clips metadata.json must be a JSON object keyed "
+                             "by clip filename.")
 
 
 def _public_probe(info):
@@ -414,11 +435,14 @@ class DashboardState:
             if item.get("media", {}).get("has_audio"):
                 audio_clip_count += 1
             clip_files.append(item)
+        metadata_summary = _file_summary(self.clips_dir / CLIP_METADATA_NAME)
         clips = {
             "count": len(clip_files),
             "audio_clip_count": audio_clip_count,
             "total_bytes": sum(item.get("size_bytes", 0) for item in clip_files),
             "files": clip_files,
+            "metadata": (dict(metadata_summary, exists=True) if metadata_summary
+                         else {"exists": False}),
         }
 
         media = {
@@ -483,6 +507,8 @@ class DashboardState:
                 raise DashboardError("Transcript must be a .txt or time-coded .srt file.")
             return self.input_dir / ("script.srt" if ext == ".srt" else "transcript.txt")
         if field_name == "clips":
+            if name.lower() == CLIP_METADATA_NAME:
+                return self.clips_dir / CLIP_METADATA_NAME
             if ext not in VIDEO_EXTENSIONS:
                 raise DashboardError("Each source clip must be MP4, MOV, MKV, WebM, or M4V.")
             return self.clips_dir / name
@@ -512,8 +538,12 @@ class DashboardState:
         # removed only after the complete new file has safely reached a temp
         # file, so a dropped long upload cannot destroy the prior master.
         destination = self._destination_for_upload(field_name, original_name)
+        # The sidecar is a single well-known file: it is replaced in place,
+        # never bumped to metadata_2.json the way a colliding clip name is.
+        clip_metadata = field_name == "clips" and destination.name == CLIP_METADATA_NAME
         with self._lock:
-            if field_name == "clips" and destination.exists() and not replace_clips:
+            if (field_name == "clips" and destination.exists() and not replace_clips
+                    and not clip_metadata):
                 stem, suffix = destination.stem, destination.suffix
                 number = 2
                 while destination.exists():
@@ -533,7 +563,9 @@ class DashboardState:
                         written += len(chunk)
                         remaining -= len(chunk)
 
-                if field_name == "master":
+                if clip_metadata:
+                    _validate_clip_metadata(temporary)
+                elif field_name == "master":
                     self._remove_named_media(self.input_dir, "master", VIDEO_EXTENSIONS)
                 elif field_name == "narration":
                     self._remove_named_media(self.input_dir, "narration", AUDIO_EXTENSIONS)

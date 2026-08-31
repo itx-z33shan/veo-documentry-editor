@@ -157,6 +157,26 @@ code {
 .file-choice::before { margin-right: 6px; color: var(--accent); content: "+"; font-size: 14px; }
 .upload-card.has-file .file-choice { color: var(--accent-bright); }
 .upload-card.has-file .file-choice::before { content: "✓"; }
+
+/* Source-clip folder queue */
+.upload-card-queue.is-reading { border-color: rgba(239, 191, 113, .55); }
+.upload-card-queue.has-error { border-style: solid; border-color: rgba(243, 135, 143, .6); }
+.upload-actions { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; }
+.button-mini { min-height: 31px; padding: 0 11px; border-radius: 8px; font-size: 11px; gap: 6px; }
+.upload-card-queue .file-choice { margin-top: 10px; }
+.clip-queue { grid-column: 1 / -1; margin-top: 12px; padding-top: 11px; border-top: 1px dashed var(--line); }
+.queue-list, .queue-notes { margin: 0; padding: 0; list-style: none; }
+.queue-list { display: grid; gap: 4px; }
+.queue-list li { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 10.5px; }
+.queue-list li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-list li small { flex: 0 0 auto; color: var(--faint); }
+.queue-list .queue-more, .queue-list .queue-more span { color: var(--muted); font-style: italic; }
+.queue-notes { display: grid; gap: 3px; margin-top: 9px; }
+.queue-notes li { color: var(--gold); font-size: 10px; line-height: 1.45; }
+.queue-error { margin: 9px 0 0; color: var(--danger); font-size: 10.5px; line-height: 1.45; }
+.upload-cancel { margin-top: 9px; font-size: 10.5px; }
+.heading-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.heading-note { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--faint); background: rgba(13, 24, 34, .5); font-size: 10px; white-space: nowrap; }
 .upload-options { margin-top: 12px; }
 .toggle-row { display: flex; align-items: flex-start; gap: 10px; color: var(--muted); font-size: 12px; line-height: 1.38; cursor: pointer; }
 .toggle-row input { position: absolute; opacity: 0; pointer-events: none; }

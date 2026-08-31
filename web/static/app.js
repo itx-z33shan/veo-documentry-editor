@@ -55,7 +55,20 @@
     pollTimer: null,
     dryRunSucceeded: false,
     finalRenderSucceeded: false,
+    // Staged source clips: nothing is written to clips/ until the form is saved.
+    clipQueue: [],
+    clipFiles: new Map(),
+    clipPlan: null,
+    uploadAborted: false,
+    activeXhr: null,
   };
+
+  // The dashboard streams each file with its own request, so a folder of 70
+  // clips is 70 uploads. These guards keep a recursive drop from scanning an
+  // entire drive and mirror the server-side per-file limit.
+  const DASHBOARD_UPLOAD_LIMIT = 12 * 1024 * 1024 * 1024;
+  const CLIP_SCAN_LIMIT = 4000;
+  const CLIP_SCAN_DEPTH = 8;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -176,6 +189,7 @@
     if (state.workflow === "clips-embedded") keepAudio.checked = true;
     if (state.workflow === "clips-music") keepAudio.checked = false;
     updateTransitionHint();
+    renderClipQueue();
   }
 
   function updateTransitionHint() {
@@ -252,6 +266,7 @@
     } else if (kind === "clips") {
       pieces.push(`${item.count || 0} clip${item.count === 1 ? "" : "s"}`);
       if (item.audio_clip_count) pieces.push(`${item.audio_clip_count} with audio`);
+      if (item.metadata && item.metadata.exists) pieces.push("metadata.json sidecar");
     }
     if (item.size_bytes) pieces.push(humanBytes(item.size_bytes));
     if (!pieces.length && item.probe_error) pieces.push("Needs FFmpeg inspection");
@@ -286,6 +301,7 @@
     const recommendation = media.recommendation || {};
     $("#recommendation-title").textContent = recommendation.title || "Choose a safe workflow.";
     $("#recommendation-reason").textContent = recommendation.reason || "";
+    if (state.clipQueue.length) replanClips();
     const warnings = recommendation.warnings || [];
     const note = $("#inspection-note");
     if (health.ffmpeg_available) {
@@ -313,7 +329,6 @@
     if (!files.length) {
       const defaults = {
         "master-file": "Choose a video file",
-        "clips-file": "Choose one or more clips",
         "narration-file": "Choose narration audio",
         "music-file": "Choose music audio",
         "transcript-file": "Choose transcript or SRT",
@@ -326,32 +341,327 @@
     card.classList.add("has-file");
   }
 
+  /* ------------------------------------------------------------------
+   * Source-clip queue.
+   *
+   * A picked folder (or a dropped one) is turned into a staging queue here,
+   * while web/static/clips-folder.js owns the rules: which files count as
+   * clips, the natural order they are edited in, and the exact filename
+   * clips/ will store. Nothing reaches the workspace until the form is saved.
+   * ------------------------------------------------------------------ */
+
+  function clipHelper() {
+    return window.VeoClipsFolder || null;
+  }
+
+  function folderPickerSupported() {
+    return typeof HTMLInputElement !== "undefined"
+      && "webkitdirectory" in HTMLInputElement.prototype;
+  }
+
+  function replaceClipsChecked() {
+    const box = $("#replace-clips");
+    return !box || box.checked;
+  }
+
+  /** Workspace clips by name, so already-saved files can be skipped. */
+  function existingClipSizes() {
+    const index = {};
+    const files = ((state.media || {}).clips || {}).files || [];
+    files.forEach((file) => {
+      if (file && file.name) index[file.name] = Number(file.size_bytes) || 0;
+    });
+    return index;
+  }
+
+  function planClipQueue() {
+    const helper = clipHelper();
+    if (!helper) return null;
+    const existing = replaceClipsChecked() ? {} : existingClipSizes();
+    return helper.planClipFiles(state.clipQueue, {
+      limit: helper.MAX_CLIPS_PER_QUEUE,
+      existing,
+      reservedNames: Object.keys(existing),
+      maxFileBytes: DASHBOARD_UPLOAD_LIMIT,
+    });
+  }
+
+  function queueRootLabel(clips) {
+    const roots = new Set(clips.map((clip) => String(clip.relativePath || "").split("/")[0]));
+    if (roots.size === 1) {
+      const root = Array.from(roots)[0];
+      if (root && root !== clips[0].originalName) return root;
+    }
+    return "";
+  }
+
+  function renderClipQueue() {
+    const card = $("#clips-card");
+    const choice = $("#clips-choice");
+    const panel = $("#clips-queue");
+    const clear = $("#clear-clips");
+    const note = $("#intake-note");
+    if (!card || !panel) return;
+    const plan = state.clipPlan;
+    const clips = plan ? plan.clips : [];
+    if (clear) clear.hidden = clips.length === 0;
+    card.classList.toggle("has-file", clips.length > 0);
+    card.classList.toggle("has-error", Boolean(plan && plan.error && clips.length));
+
+    if (!clips.length) {
+      if (choice) {
+        choice.textContent = folderPickerSupported()
+          ? "Choose a folder, or drop one here"
+          : "Choose one or more clips";
+      }
+      panel.hidden = true;
+      panel.innerHTML = "";
+      if (note) {
+        note.textContent = workflowDefinition().engine === "master"
+          ? "Not needed for a finished master."
+          : "No clips queued.";
+      }
+      updateUploadButton();
+      return;
+    }
+
+    const root = queueRootLabel(clips);
+    const skipped = clips.length - plan.pending.length;
+    const summary = `${clips.length} clip${clips.length === 1 ? "" : "s"} queued`
+      + (root ? ` from “${root}”` : "")
+      + ` · ${humanBytes(plan.totalBytes)}`
+      + (skipped ? ` · ${skipped} already saved` : "");
+    if (choice) choice.textContent = summary;
+
+    const shown = clips.slice(0, 6).map((clip) => `<li><span>${escapeHtml(clip.name)}</span><small>${clip.alreadyInWorkspace
+      ? "already in workspace"
+      : escapeHtml(humanBytes(clip.size))}</small></li>`).join("");
+    const rest = clips.length > 6 ? `<li class="queue-more">+${clips.length - 6} more</li>` : "";
+    const notes = (plan.warnings || []).map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+    panel.innerHTML = `<ul class="queue-list">${shown}${rest}</ul>`
+      + (notes ? `<ul class="queue-notes">${notes}</ul>` : "")
+      + (plan.error ? `<p class="queue-error">${escapeHtml(plan.error)}</p>` : "");
+    panel.hidden = !notes && !shown && !plan.error;
+    if (note) {
+      note.textContent = workflowDefinition().engine === "master"
+        ? `${summary} · not used by the master route`
+        : summary;
+    }
+    updateUploadButton();
+  }
+
+  function updateUploadButton() {
+    const button = $("#upload-button");
+    if (!button || button.disabled) return;
+    const plan = state.clipPlan;
+    const master = workflowDefinition().engine === "master";
+    const pending = master ? 0 : (plan ? plan.pending.length : 0);
+    button.innerHTML = pending > 1
+      ? `Save &amp; inspect ${pending} clips <span>↑</span>`
+      : "Save &amp; inspect media <span>↑</span>";
+  }
+
+  function replanClips() {
+    state.clipPlan = planClipQueue();
+    renderClipQueue();
+    return state.clipPlan;
+  }
+
+  function queueClipEntries(items) {
+    const helper = clipHelper();
+    if (!helper) {
+      showFlash("The clip queue script failed to load. Reload the dashboard.");
+      return;
+    }
+    let added = 0;
+    items.forEach((item) => {
+      const file = item.file;
+      if (!file) return;
+      const relativePath = item.relativePath || file.name;
+      const key = helper.queueKey(relativePath, file.size);
+      if (state.clipFiles.has(key)) return;
+      state.clipFiles.set(key, file);
+      state.clipQueue.push({ key, relativePath, name: file.name, size: file.size });
+      added += 1;
+    });
+    const plan = replanClips();
+    if (plan && plan.error) {
+      showFlash(plan.error);
+      return;
+    }
+    if (!added) {
+      showFlash("Those clips are already in the queue.");
+      return;
+    }
+    const skipped = plan.clips.length - plan.pending.length;
+    showFlash(`${added} clip${added === 1 ? "" : "s"} queued (${humanBytes(plan.totalBytes)} to save)`
+      + (skipped ? `, ${skipped} already in the workspace` : "")
+      + ". Save the form to copy them into clips/.", "success");
+  }
+
+  function clearClipQueue() {
+    state.clipQueue = [];
+    state.clipFiles = new Map();
+    const folder = $("#clips-folder");
+    const files = $("#clips-file");
+    if (folder) folder.value = "";
+    if (files) files.value = "";
+    replanClips();
+  }
+
+  function entriesFromFileInput(input) {
+    return Array.from(input.files || []).map((file) => ({
+      file,
+      relativePath: file.webkitRelativePath || file.name,
+    }));
+  }
+
+  function fileFromEntry(entry, prefix) {
+    return new Promise((resolve) => {
+      const fail = () => resolve(null);
+      try {
+        entry.file((file) => resolve({
+          file,
+          relativePath: prefix ? `${prefix}/${entry.name}` : entry.name,
+        }), fail);
+      } catch (error) {
+        fail();
+      }
+    });
+  }
+
+  function readDirectoryEntries(entry) {
+    return new Promise((resolve) => {
+      const reader = entry.createReader();
+      const found = [];
+      const step = () => {
+        try {
+          reader.readEntries((batch) => {
+            if (!batch || !batch.length) {
+              resolve(found);
+              return;
+            }
+            found.push(...batch);
+            if (found.length >= CLIP_SCAN_LIMIT) {
+              resolve(found);
+              return;
+            }
+            step();
+          }, () => resolve(found));
+        } catch (error) {
+          resolve(found);
+        }
+      };
+      step();
+    });
+  }
+
+  /** Depth-limited walk so a dropped folder behaves like the folder picker. */
+  async function entriesFromDataTransfer(dataTransfer) {
+    const items = Array.from((dataTransfer && dataTransfer.items) || []);
+    const supportsEntries = items.length > 0
+      && typeof items[0].webkitGetAsEntry === "function";
+    const roots = [];
+    if (supportsEntries) {
+      items.forEach((item) => {
+        if (item.kind !== "file") return;
+        const entry = item.webkitGetAsEntry();
+        if (entry) roots.push(entry);
+      });
+    }
+    if (!roots.length) {
+      return Array.from((dataTransfer && dataTransfer.files) || [])
+        .map((file) => ({ file, relativePath: file.name }));
+    }
+    const collected = [];
+    const pending = roots.map((entry) => ({ entry, prefix: "", depth: 0 }));
+    while (pending.length && collected.length < CLIP_SCAN_LIMIT) {
+      const { entry, prefix, depth } = pending.shift();
+      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory) {
+        if (depth >= CLIP_SCAN_DEPTH) continue;
+        const children = await readDirectoryEntries(entry);
+        children.forEach((child) => pending.push({ entry: child, prefix: path, depth: depth + 1 }));
+        continue;
+      }
+      const item = await fileFromEntry(entry, prefix);
+      if (item) collected.push(item);
+    }
+    return collected;
+  }
+
+  async function queueDroppedClips(card, dataTransfer) {
+    card.classList.add("is-reading");
+    const choice = $("#clips-choice");
+    if (choice) choice.textContent = "Reading folder…";
+    try {
+      const items = await entriesFromDataTransfer(dataTransfer);
+      queueClipEntries(items);
+    } catch (error) {
+      showFlash("That folder could not be read. Use Choose folder instead.");
+      renderClipQueue();
+    } finally {
+      card.classList.remove("is-reading");
+    }
+  }
+
   function selectedUploads() {
     const definition = workflowDefinition();
     const uploads = [];
     const addFiles = (field, input) => {
-      Array.from(input.files || []).forEach((file) => uploads.push({ field, file, replaceClips: false }));
+      if (!input) return;
+      Array.from(input.files || []).forEach((file) => {
+        uploads.push({ field, file, name: file.name, replaceClips: false });
+      });
     };
     if (definition.engine === "master") addFiles("master", $("#master-file"));
-    else addFiles("clips", $("#clips-file"));
+    else addQueuedClips(uploads);
     addFiles("narration", $("#narration-file"));
     if (state.workflow === "master-rebuild" || state.workflow === "clips-music") addFiles("music", $("#music-file"));
     addFiles("transcript", $("#transcript-file"));
-
-    const firstClip = uploads.find((entry) => entry.field === "clips");
-    if (firstClip && $("#replace-clips").checked) firstClip.replaceClips = true;
     return uploads;
+  }
+
+  /** Clips are uploaded one request per file; only the first may replace. */
+  function addQueuedClips(uploads) {
+    const plan = state.clipPlan;
+    if (!plan) return;
+    const replace = replaceClipsChecked();
+    plan.clips.forEach((clip) => {
+      if (!replace && clip.alreadyInWorkspace) return;
+      const file = state.clipFiles.get(clip.key);
+      if (!file) return;
+      uploads.push({ field: "clips", file, name: clip.name, replaceClips: false });
+    });
+    const firstClip = uploads.find((entry) => entry.field === "clips");
+    if (firstClip && replace) firstClip.replaceClips = true;
+    if (plan.metadata) {
+      const file = state.clipFiles.get(plan.metadata.key);
+      // Sent last so a replace of the clip folder cannot discard the sidecar.
+      if (file) uploads.push({ field: "clips", file, name: "metadata.json", replaceClips: false });
+    }
+  }
+
+  function uploadError(message, aborted = false) {
+    const error = new Error(message);
+    error.aborted = aborted;
+    return error;
   }
 
   function rawUpload(entry, final, completedBytes, totalBytes, updateProgress) {
     return new Promise((resolve, reject) => {
       const query = new URLSearchParams({
         field: entry.field,
-        name: entry.file.name,
+        name: entry.name || entry.file.name,
         replaceClips: entry.replaceClips ? "true" : "false",
         final: final ? "true" : "false",
       });
       const xhr = new XMLHttpRequest();
+      const settle = (callback, value) => {
+        state.activeXhr = null;
+        callback(value);
+      };
+      state.activeXhr = xhr;
       xhr.open("POST", `/api/upload?${query.toString()}`);
       xhr.responseType = "json";
       xhr.setRequestHeader("Content-Type", "application/octet-stream");
@@ -361,12 +671,14 @@
       });
       xhr.addEventListener("load", () => {
         if (xhr.status < 200 || xhr.status >= 300 || !xhr.response || !xhr.response.ok) {
-          reject(new Error((xhr.response && xhr.response.error) || `Upload failed for ${entry.file.name}.`));
+          settle(reject, uploadError((xhr.response && xhr.response.error) || `Upload failed for ${entry.file.name}.`));
           return;
         }
-        resolve(xhr.response);
+        settle(resolve, xhr.response);
       });
-      xhr.addEventListener("error", () => reject(new Error(`Upload connection failed for ${entry.file.name}.`)));
+      xhr.addEventListener("error", () => settle(reject, uploadError(`Upload connection failed for ${entry.file.name}.`)));
+      xhr.addEventListener("timeout", () => settle(reject, uploadError(`Upload timed out for ${entry.file.name}.`)));
+      xhr.addEventListener("abort", () => settle(reject, uploadError(`Upload stopped during ${entry.file.name}.`, true)));
       xhr.send(entry.file);
     });
   }
@@ -374,9 +686,18 @@
   async function uploadSelectedFiles(event) {
     event.preventDefault();
     const form = $("#upload-form");
+    const definition = workflowDefinition();
+    const plan = state.clipPlan;
+    if (plan && plan.error) {
+      showFlash(plan.error);
+      return;
+    }
     const uploads = selectedUploads();
     if (!uploads.length) {
-      showFlash("Choose at least one file for the selected workflow.");
+      const queued = plan ? plan.clips.length : 0;
+      showFlash(queued
+        ? "Every queued clip is already saved in the workspace. Turn on “Replace existing source clips” to send them again."
+        : "Choose at least one file for the selected workflow.");
       return;
     }
 
@@ -385,37 +706,96 @@
     const bar = $("#upload-progress-bar");
     const label = $("#upload-progress-label");
     const value = $("#upload-progress-value");
+    const cancel = $("#upload-cancel");
     const totalBytes = uploads.reduce((sum, entry) => sum + entry.file.size, 0);
+    const many = uploads.length > 1;
     let completedBytes = 0;
+    let saved = 0;
     let finalResponse = null;
+    let replaced = false;
+    const failures = [];
     const updateProgress = (loaded, total) => {
       const percent = total ? Math.max(0, Math.min(100, Math.round(loaded / total * 100))) : 0;
       bar.style.width = `${percent}%`;
       value.textContent = `${percent}%`;
     };
 
+    state.uploadAborted = false;
     setBusy(button, true, "Uploading…");
     progress.hidden = false;
+    if (cancel) cancel.hidden = !many;
     updateProgress(0, totalBytes);
+    let stopped = false;
     try {
       for (let index = 0; index < uploads.length; index += 1) {
+        if (state.uploadAborted) {
+          stopped = true;
+          break;
+        }
         const entry = uploads[index];
-        label.textContent = `Uploading ${index + 1} of ${uploads.length}: ${entry.file.name}`;
-        finalResponse = await rawUpload(entry, index === uploads.length - 1, completedBytes, totalBytes, updateProgress);
+        const size = humanBytes(entry.file.size);
+        label.textContent = many
+          ? `Uploading ${index + 1} of ${uploads.length} (${size}): ${entry.file.name}`
+          : `Uploading ${entry.file.name} (${size})`;
+        if (entry.replaceClips) replaced = true;
+        try {
+          const response = await rawUpload(entry, index === uploads.length - 1, completedBytes, totalBytes, updateProgress);
+          if (response && response.media) finalResponse = response;
+        } catch (error) {
+          if (error.aborted) {
+            stopped = true;
+            break;
+          }
+          // A stray clip in a 70-file folder must not destroy the other 69.
+          // A failed master/narration/music file, or a failed first clip while
+          // replacing, stops the batch so the workspace never ends up mixed.
+          if (index === 0 || entry.field !== "clips") throw error;
+          failures.push(`${entry.file.name}: ${error.message}`);
+          completedBytes += entry.file.size;
+          updateProgress(completedBytes, totalBytes);
+          continue;
+        }
+        saved += 1;
         completedBytes += entry.file.size;
         updateProgress(completedBytes, totalBytes);
       }
-      value.textContent = "Saved";
-      label.textContent = "Assets saved locally and inspected.";
+
       if (finalResponse && finalResponse.media) renderMedia(finalResponse.media);
       else await refreshMedia(true);
-      form.reset();
-      $$("input[type=file]", form).forEach(updateFileChoice);
-      showFlash("Assets are in the local workspace. Review the inspection below.", "success");
+
+      if (stopped && saved < uploads.length) {
+        value.textContent = "Stopped";
+        label.textContent = `Upload stopped after ${saved} of ${uploads.length} files. Saved files stay in the workspace; the rest are still queued.`;
+        showFlash(`Upload stopped. Re-pick the folder to continue — saved clips are detected and skipped.`);
+      } else if (failures.length) {
+        value.textContent = "Partial";
+        label.textContent = `${saved} of ${uploads.length} files saved.`;
+        if (replaced) {
+          const box = $("#replace-clips");
+          if (box) box.checked = false;
+          replanClips();
+        }
+        showFlash(`${failures.length} file(s) failed: ${failures.slice(0, 2).join("; ")}${failures.length > 2 ? " …" : ""}. The rest are saved; pick the folder again to send only what is missing.`);
+      } else {
+        value.textContent = "Saved";
+        label.textContent = "Assets saved locally and inspected.";
+        // A master workflow never consumes the queue, so keep the staged
+        // clips for the next time the raw-clips route is selected.
+        if (definition.engine === "clips") clearClipQueue();
+        form.reset();
+        $$("input[type=file]", form).filter((input) => !input.id.startsWith("clips-")).forEach(updateFileChoice);
+        showFlash("Assets are in the local workspace. Review the inspection below.", "success");
+      }
     } catch (error) {
+      await refreshMedia(true);
       showFlash(error.message);
     } finally {
       setBusy(button, false);
+      updateUploadButton();
+      if (cancel) {
+        cancel.hidden = true;
+        cancel.textContent = "Stop after the current file";
+      }
     }
   }
 
@@ -616,13 +996,83 @@
     }
   }
 
+  function bindClipQueueControls() {
+    const card = $("#clips-card");
+    const folderInput = $("#clips-folder");
+    const filesInput = $("#clips-file");
+    if (!card || !folderInput || !filesInput) return;
+
+    if (!folderPickerSupported()) {
+      const button = $("#pick-clips-folder");
+      if (button) button.hidden = true;
+    }
+
+    // Both pickers fill the same queue, so a project can be assembled from
+    // several folders (Veo exports, CapCut picks) before anything is saved.
+    folderInput.addEventListener("change", () => queueClipEntries(entriesFromFileInput(folderInput)));
+    filesInput.addEventListener("change", () => queueClipEntries(entriesFromFileInput(filesInput)));
+
+    const stop = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    $("#pick-clips-folder").addEventListener("click", (event) => {
+      stop(event);
+      folderInput.value = "";
+      folderInput.click();
+    });
+    $("#pick-clip-files").addEventListener("click", (event) => {
+      stop(event);
+      filesInput.click();
+    });
+    $("#clear-clips").addEventListener("click", (event) => {
+      stop(event);
+      clearClipQueue();
+      showFlash("Clip queue cleared. Files already saved in the workspace are untouched.", "success");
+    });
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button") || event.target === folderInput || event.target === filesInput) return;
+      if (!folderPickerSupported()) {
+        filesInput.click();
+        return;
+      }
+      folderInput.value = "";
+      folderInput.click();
+    });
+
+    ["dragenter", "dragover"].forEach((name) => card.addEventListener(name, (event) => {
+      event.preventDefault();
+      card.classList.add("is-dragging");
+    }));
+    ["dragleave", "drop"].forEach((name) => card.addEventListener(name, (event) => {
+      event.preventDefault();
+      card.classList.remove("is-dragging");
+    }));
+    card.addEventListener("drop", (event) => {
+      const dataTransfer = event.dataTransfer;
+      if (!dataTransfer) return;
+      queueDroppedClips(card, dataTransfer);
+    });
+
+    const replace = $("#replace-clips");
+    if (replace) replace.addEventListener("change", () => replanClips());
+
+    const cancel = $("#upload-cancel");
+    if (cancel) cancel.addEventListener("click", () => {
+      state.uploadAborted = true;
+      cancel.textContent = "Stopping…";
+      if (state.activeXhr) state.activeXhr.abort();
+    });
+  }
+
   function bindEvents() {
     $$(".workflow-card").forEach((card) => card.addEventListener("click", () => selectWorkflow(card.dataset.workflow)));
     $$('[data-next-step]').forEach((button) => button.addEventListener("click", () => goStep(button.dataset.nextStep)));
     $$('[data-prev-step]').forEach((button) => button.addEventListener("click", () => goStep(button.dataset.prevStep)));
     $$('[data-go-step]').forEach((button) => button.addEventListener("click", () => goStep(button.dataset.goStep)));
-    $$("input[type=file]").forEach((input) => input.addEventListener("change", () => updateFileChoice(input)));
-    $$(".upload-card").forEach((card) => {
+    $$("input[type=file]").filter((input) => !input.id.startsWith("clips-"))
+      .forEach((input) => input.addEventListener("change", () => updateFileChoice(input)));
+    $$(".upload-card").filter((card) => card.id !== "clips-card").forEach((card) => {
       const input = $("input[type=file]", card);
       ["dragenter", "dragover"].forEach((eventName) => card.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -641,6 +1091,13 @@
         updateFileChoice(input);
       });
     });
+    bindClipQueueControls();
+    // Dropping a folder anywhere else on the page would otherwise navigate
+    // the browser away from the wizard and lose the queue.
+    ["dragover", "drop"].forEach((eventName) => document.addEventListener(eventName, (event) => {
+      if (event.target.closest(".upload-card")) return;
+      event.preventDefault();
+    }));
     $("#upload-form").addEventListener("submit", uploadSelectedFiles);
     $("#refresh-media").addEventListener("click", () => refreshMedia());
     $("#refresh-results").addEventListener("click", refreshResults);
@@ -660,6 +1117,7 @@
   async function initialize() {
     bindEvents();
     updateWorkflowUI();
+    replanClips();
     updateCaptionControls();
     renderReview();
     await refreshMedia(true);
