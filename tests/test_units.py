@@ -274,6 +274,34 @@ class TimelineTest(unittest.TestCase):
         timeline = build_timeline(cfg, narration, scenes, mapping, clips)
         self.assertEqual(len(timeline["scenes"]), 1)
 
+    def test_build_timeline_keeps_srt_scene_boundaries(self):
+        cfg = _cfg()
+        narration = _narration(dur=6.0)
+        scenes = segment_scenes(
+            "[SCENE 1]\nAlpha beta gamma delta.\n\n"
+            "[SCENE 2]\nEpsilon zeta eta theta.\n")
+        # Real boundaries coming from a time-coded SRT.
+        scenes[0]["start"], scenes[0]["end"] = 0.0, 3.0
+        scenes[1]["start"], scenes[1]["end"] = 3.0, 6.0
+        clips = _clips(4)
+        mapping = {1: ["clip_001.mp4", "clip_002.mp4"],
+                   2: ["clip_003.mp4", "clip_004.mp4"]}
+        timeline = build_timeline(cfg, narration, scenes, mapping, clips)
+        entries = {s["index"]: s for s in timeline["scenes"]}
+        self.assertEqual(entries[1]["start"], 0.0)
+        self.assertEqual(entries[1]["end"], 3.0)
+        self.assertEqual(entries[2]["start"], 3.0)
+        self.assertEqual(entries[2]["end"], 6.0)
+        # Shots must not cross the real scene boundaries.
+        for shot in timeline["shots"]:
+            if shot["scene"] == 1:
+                self.assertLessEqual(shot["end"], 3.0 + 1e-6)
+            else:
+                self.assertGreaterEqual(shot["start"], 3.0 - 1e-6)
+        # Subtitles are still derived and stay inside the narration.
+        self.assertTrue(timeline["subtitles"])
+        self.assertAlmostEqual(timeline["duration"], 6.0, places=1)
+
 
 if __name__ == "__main__":
     unittest.main()

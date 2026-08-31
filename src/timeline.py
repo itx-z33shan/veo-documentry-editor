@@ -89,6 +89,45 @@ def _scene_timing(scenes, sentences):
         scene["end"] = round(scene["end"], 3)
 
 
+def _scenes_pre_timed(scenes):
+    """True when scenes already carry real [start, end] windows (e.g. SRT)."""
+    return bool(scenes) and all(
+        isinstance(s.get("start"), (int, float)) and
+        isinstance(s.get("end"), (int, float)) and
+        s["end"] > s["start"] for s in scenes)
+
+
+def _tile_sentences_in_scenes(scenes, sentences):
+    """Tile each scene's sentences inside its [start,end] window.
+
+    Used when scenes already carry real boundaries (e.g. from a time-coded
+    SRT) so that derived subtitle cues stay consistent with the edit.
+    ``sentences`` are mutated in place (start/end assigned), mirroring
+    :func:`_compute_sentence_timing`.
+    """
+    grouped = {}
+    for s in sentences:
+        grouped.setdefault(s["scene_index"], []).append(s)
+    for scene in scenes:
+        group = grouped.get(scene["index"])
+        if not group:
+            continue
+        start, end = scene["start"], scene["end"]
+        window = max(0.0, end - start)
+        total_words = sum(s["words"] for s in group)
+        if total_words <= 0:
+            for s in group:
+                s["start"], s["end"] = start, min(end, start + 0.3)
+            continue
+        acc = 0
+        for s in group:
+            s["start"] = start + window * acc / total_words
+            acc += s["words"]
+            s["end"] = start + window * acc / total_words
+            if s["end"] - s["start"] < 0.3:
+                s["end"] = min(end, s["start"] + 0.3)
+
+
 def build_subtitle_cues(cfg, scenes, duration):
     """Build proportional subtitle cues without planning any video shots.
 
@@ -169,8 +208,14 @@ def build_timeline(cfg, narration_info, scenes, clip_map, clips):
     # --- Sentence timing -------------------------------------------------
     sentences = _flatten_sentences(scenes)
     if sentences:
-        _compute_sentence_timing(sentences, total)
-        _scene_timing(scenes, sentences)
+        if _scenes_pre_timed(scenes):
+            # Real boundaries already applied (e.g. SRT cue times): keep
+            # them and only tile sentence timing inside each scene window
+            # so the derived subtitle cues stay consistent with the edit.
+            _tile_sentences_in_scenes(scenes, sentences)
+        else:
+            _compute_sentence_timing(sentences, total)
+            _scene_timing(scenes, sentences)
         subtitle_cues = _build_subtitle_cues(sentences, cfg)
     else:
         # No script: single scene covering the whole narration.

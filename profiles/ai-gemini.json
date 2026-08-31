@@ -1,0 +1,16 @@
+{
+  "ai_provider": "gemini",
+  "clip_strategy": "semantic",
+  "fallback_strategy": "sequential",
+  "ai_top_k": 5,
+  "ai_max_video_bytes": 31457280,
+  "pacing": "normal",
+  "loop_footage": true,
+  "subtitle_enabled": true,
+  "subtitle_burn_in": false,
+  "loudness_target_lufs": -14.0,
+  "loudness_target_tp": -1.5,
+  "sample_rate": 48000,
+  "aac_bitrate": 256,
+  "faststart": true
+}

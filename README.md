@@ -540,7 +540,11 @@ paragraph/sentence boundaries. **No LLM is required** for any of this.
 ## Subtitles
 
 * A supplied time-coded `.srt` keeps its original timing and is copied to
-  `output/subtitles.srt`.
+  `output/subtitles.srt`. Its cue times also drive scene boundaries in the
+  clip workflow: scenes (and the shot changes between them) start/end on the
+  real narration beats rather than proportional estimates. A plain transcript
+  with `[SCENE …]` markers combined with an SRT gets both marker-driven scenes
+  and real timing.
 * A plain script/transcript creates proportionally timed `.srt` and `.ass`
   files over the measured narration duration.
 * The local dashboard can optionally generate a word-timed SRT draft with

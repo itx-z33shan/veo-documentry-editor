@@ -66,6 +66,150 @@ def srt_to_plain_text(path):
     return " ".join(kept).strip()
 
 
+_SRT_TIME_RE = re.compile(
+    r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*"
+    r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})")
+
+
+def parse_srt(path):
+    """Parse a time-coded SRT into a list of ``{start, end, text}`` cues.
+
+    Times are returned in seconds. Cue text is cleaned the same way as
+    :func:`srt_to_plain_text` (HTML-style tags stripped, whitespace
+    collapsed). Cues without any text are dropped.
+    """
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            lines = fh.read().splitlines()
+    except OSError as exc:
+        raise TranscriptionError("Cannot read SRT file %r: %s" % (path, exc))
+
+    def _to_seconds(h, m, s, ms):
+        return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+
+    cues = []
+    text_lines = []
+    current = None
+    for raw in lines:
+        line = raw.strip()
+        m = _SRT_TIME_RE.search(line)
+        if m:
+            if current is not None:
+                current["end"] = round(current["end"], 3)
+                cues.append(current)
+            current = {
+                "start": round(_to_seconds(*m.groups()[:4]), 3),
+                "end": round(_to_seconds(*m.groups()[4:]), 3),
+                "text": "",
+            }
+            text_lines = []
+            continue
+        if current is None:
+            continue  # cue index line or leading junk
+        if not line:
+            # Blank line terminates the cue.
+            text = " ".join(t for t in (_clean_caption_text(t)
+                                        for t in text_lines) if t)
+            if text:
+                current["text"] = text
+                cues.append(current)
+            current = None
+            continue
+        text_lines.append(line)
+
+    if current is not None:
+        text = " ".join(t for t in (_clean_caption_text(t)
+                                    for t in text_lines) if t)
+        if text:
+            current["text"] = text
+            cues.append(current)
+    return cues
+
+
+def _word_tokens(text):
+    """Lowercased word tokens used for ordered cue-to-scene matching."""
+    return set(re.findall(r"[a-z0-9']+", str(text).lower()))
+
+
+def _cue_scene_score(cue_words, scene_words):
+    if not cue_words:
+        return 0.0
+    return len(cue_words & scene_words) / len(cue_words)
+
+
+def apply_srt_scene_timing(scenes, cues):
+    """Overlay real SRT cue times onto scenes as ``[start, end]`` windows.
+
+    The scenes' text is normally derived from the same SRT (via
+    :func:`srt_to_plain_text`), so each cue is matched to the scene whose
+    words it overlaps most. Matching only moves forward through the scene
+    list (ordered assignment), which keeps alignment stable even when the
+    narration repeats words. Scenes that match no cue are interpolated
+    inside the gap between their timed neighbours.
+
+    Modifies ``scenes`` in place by setting ``start``/``end``. Returns True
+    when at least one scene received a real timed window, else False.
+    """
+    if not scenes or not cues:
+        return False
+    n = len(scenes)
+    scene_words = [_word_tokens(s.get("text", "")) for s in scenes]
+    assigned = [[] for _ in range(n)]
+    ptr = 0
+    for cue in cues:
+        cue_words = _word_tokens(cue.get("text", ""))
+        best, best_score = ptr, 0.0
+        for i in range(ptr, n):
+            score = _cue_scene_score(cue_words, scene_words[i])
+            if score > best_score:
+                best, best_score = i, score
+        if best_score <= 0.0:
+            best = ptr
+        assigned[best].append(cue)
+        ptr = best
+
+    if not any(group for group in assigned):
+        return False
+
+    for i, group in enumerate(assigned):
+        if group:
+            scenes[i]["start"] = min(c["start"] for c in group)
+            scenes[i]["end"] = max(c["end"] for c in group)
+        else:
+            scenes[i]["start"] = None
+            scenes[i]["end"] = None
+
+    # Interpolate unmatched scenes between their timed neighbours.
+    last_known = None
+    for i in range(n):
+        if assigned[i]:
+            last_known = i
+            continue
+        prev_end = (scenes[last_known]["end"]
+                    if last_known is not None else 0.0)
+        nxt = next((j for j in range(i + 1, n) if assigned[j]), None)
+        if nxt is None:
+            start = end = prev_end
+        else:
+            gap = scenes[nxt]["start"] - prev_end
+            wi = len(scenes[i].get("text", "").split())
+            wn = len(scenes[nxt].get("text", "").split())
+            share = (wi / (wi + wn)) if (wi + wn) else 0.5
+            start = prev_end
+            end = prev_end + max(0.0, gap) * share
+        scenes[i]["start"] = round(start, 3)
+        scenes[i]["end"] = round(end, 3)
+        last_known = i
+
+    for i in range(n):
+        if scenes[i]["start"] is None or scenes[i]["end"] is None:
+            scenes[i]["start"] = 0.0
+            scenes[i]["end"] = 0.0
+        scenes[i]["start"] = round(scenes[i]["start"], 3)
+        scenes[i]["end"] = round(scenes[i]["end"], 3)
+    return True
+
+
 def _wrap_caption(text, max_chars_per_line, max_lines):
     """Wrap caption text into the configured one/two-line visual layout."""
     words = _clean_caption_text(text).split()
