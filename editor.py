@@ -31,7 +31,8 @@ from src.inputs import find_narration, find_music
 from src.mastering import MasterFinisher, write_master_subtitles, write_master_report
 from src.scanner import scan_clips, load_clip_metadata
 from src.script import segment_scenes, find_script
-from src.transcription import find_caption_srt, srt_to_plain_text
+from src.transcription import (find_caption_srt, srt_to_plain_text,
+                               parse_srt, apply_srt_scene_timing)
 from src.matcher import assign_clips_to_scenes, assign_clips_with_ai
 from src.timeline import build_timeline
 from src.subtitles import write_srt, write_ass, has_text
@@ -259,6 +260,18 @@ def _run(cfg, paths, preview=False, dry_run=False):
         script_text = srt_to_plain_text(caption_srt)
         scenes = segment_scenes(script_text)
         print("  Found time-coded SRT with %d derived scene(s)." % len(scenes))
+
+    # When a time-coded SRT is available, drive scene boundaries from its
+    # real cue times so every clip change lands on a narration beat.
+    if caption_srt and scenes:
+        srt_cues = parse_srt(caption_srt)
+        if apply_srt_scene_timing(scenes, srt_cues):
+            print("  Scene timing driven by SRT cue times (real narration sync).")
+        else:
+            print("  WARNING: SRT provided no usable cue times; using "
+                  "estimated scene timing.")
+            scan_warnings.append("SRT provided no usable cue times; "
+                                 "using estimated scene timing.")
     else:
         scenes = None
         print("  No script found; using single-scene sequential edit.")
