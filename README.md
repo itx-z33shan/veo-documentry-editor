@@ -130,11 +130,46 @@ Then open **http://127.0.0.1:8765** in your browser. It provides a five-step
 wizard:
 
 1. choose Finished CapCut Master, Raw Clips + Voice, or Clean Stem Rebuild;
-2. drag/drop the master, AAC narration, transcript/SRT, and optional clips or
-   music;
+2. drop or pick the master, AAC narration, transcript/SRT, and optional clips
+   or music — source clips can be added as a **whole folder** at once;
 3. choose safe YouTube/Facebook finishing settings;
 4. run a dry check, see live editor/FFmpeg logs, then start the render; and
 5. preview/download the MP4, SRT, and JSON report.
+
+### Queue a whole clip folder instead of one clip at a time
+
+For the raw-clips workflows, Step 02 has a **Choose folder** button (and the
+card accepts a dropped folder). The folder picker walks the directory you
+select, so a Veo export tree like this is enough — no manual copying, renaming,
+or Ctrl-clicking 70 files:
+
+```text
+my-veo-clips/
+├── 001.mp4 … 070.mp4
+├── batch-2/071.mp4          ← subfolders are included
+└── metadata.json            ← optional, copied to clips/ too
+```
+
+The queue that appears on the card is what will be saved, and the rules are
+fixed and visible before anything is written:
+
+| Rule | Behaviour |
+|---|---|
+| What counts | `.mp4`, `.mov`, `.mkv`, `.webm`, `.m4v` only; other files, `.DS_Store`, `._*` AppleDouble copies, and 0-byte stubs are reported as skipped. |
+| Order | Natural sort of the path inside the folder (`002` before `010`), which is the same order `src/scanner.py` uses for `clips/`. |
+| Name clashes | The same filename in two subfolders is stored as `parentfilename_original.mp4` rather than overwriting. |
+| Already saved | With **Replace existing source clips** off, a clip already in `clips/` with the same name *and* size is not uploaded twice; that is also how you resume after stopping a long upload. |
+| Sidecar | A `metadata.json` at the top of the folder is sent last, so a replace cannot delete it, and invalid JSON is rejected before it can overwrite a good sidecar. |
+| Size | Up to 400 clips per save and 12 GB per file, one streaming request per clip; **Stop after the current file** ends the batch safely. |
+
+Nothing reaches disk until you press **Save & inspect media**, and each file is
+written to `clips/` (or `input/`, `music/`) through a temp file, so an
+interrupted upload can never damage what was already there. A single failed
+clip in a 70-clip folder is reported at the end instead of aborting the rest.
+
+If you would rather not upload at all, this is a local tool: put (or symlink)
+the folder in `clips/` and press **↻ Refresh inspection** — the same
+inventory, ordering, and render planning apply.
 
 For a raw-clips workflow, Step 03 can optionally enable **Use my local Gemini
 key for visual clip matching**. The browser never receives a key: launch the
@@ -275,6 +310,7 @@ veo_documentary_editor/
 ├── editor.py            # CLI orchestration
 ├── web.py               # local browser dashboard launcher
 ├── web/static/          # guided dashboard HTML/CSS/JS (no Node required)
+│   └── clips-folder.js  # clip-folder queue rules (filter/order/naming), DOM-free
 ├── config.json          # configuration (everything is tunable)
 ├── requirements.txt     # (no Python deps required)
 ├── requirements-transcription.txt # optional local faster-whisper captions
