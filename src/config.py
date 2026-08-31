@@ -117,6 +117,9 @@ DEFAULTS = {
     "ai_description_cache_path": "output/ai_clip_descriptions.json",
 
     # --- Paths / binaries ------------------------------------------------
+    # Default to the bundled tools/ layout (Windows builds ship ffmpeg.exe /
+    # ffprobe.exe there). find_binary() still falls back to PATH, so plain
+    # Linux/macOS installs with system FFmpeg work without any config.
     "ffmpeg_bin": "tools/ffmpeg.exe",
     "ffprobe_bin": "tools/ffprobe.exe",
     "temp_dir": "temp",

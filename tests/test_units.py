@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from collections import namedtuple
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -21,7 +22,10 @@ from src.matcher import assign_clips_to_scenes
 from src.subtitles import write_srt, write_ass, _fmt_timestamp
 from src.timeline import build_timeline, _default_scene
 from src.overrides import apply_overrides
-from src.renderer import Renderer
+from src.renderer import Renderer, _check_disk, _filtergraph_escape
+from src.errors import DiskSpaceError
+
+_USAGE = namedtuple("_Usage", ["total", "used", "free"])
 
 
 def _cfg(tmp=None):
@@ -301,6 +305,204 @@ class TimelineTest(unittest.TestCase):
         # Subtitles are still derived and stay inside the narration.
         self.assertTrue(timeline["subtitles"])
         self.assertAlmostEqual(timeline["duration"], 6.0, places=1)
+
+
+# ----------------------------------------------------------------------
+# FFmpeg filtergraph parser (test double)
+#
+# A faithful, minimal reimplementation of the FFmpeg filtergraph quoting
+# and escaping semantics (ffmpeg-utils, "Quoting and escaping"):
+#
+#   * Outside quotes a backslash escapes the next character.
+#   * Inside single quotes everything is literal except that \' stands
+#     for a single quote.
+#   * An unescaped ':' separates filter options; the first unescaped '='
+#     in an option separates its key from its value.
+#
+# The renderer's escaping is validated against this parser, and the
+# production crash (Windows SRT path landing in the "original_size"
+# option) is reproduced exactly.
+# ----------------------------------------------------------------------
+def _parse_vf(vf):
+    """Parse a single-filter -vf string the way FFmpeg does.
+
+    Returns (filter_name, options); options is a list of (key, value)
+    tuples where key is None for positional values.
+    """
+    segments = []  # each: [key_chars, value_chars, has_key]
+    seg = None
+    in_quotes = False
+    i, n = 0, len(vf)
+
+    def ensure_seg():
+        nonlocal seg
+        if seg is None:
+            seg = [[], [], False]
+            segments.append(seg)
+
+    def append(ch):
+        (seg[1] if seg[2] else seg[0]).append(ch)
+
+    while i < n:
+        ch = vf[i]
+        if in_quotes:
+            if ch == "\\" and i + 1 < n and vf[i + 1] == "'":
+                append("'")
+                i += 2
+            elif ch == "'":
+                in_quotes = False
+                i += 1
+            else:
+                append(ch)
+                i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            ensure_seg()
+            append(vf[i + 1])
+            i += 2
+            continue
+        if ch == "'":
+            ensure_seg()
+            in_quotes = True
+            i += 1
+            continue
+        if ch == ":":
+            seg = None
+            i += 1
+            continue
+        ensure_seg()
+        if ch == "=" and not seg[2]:
+            seg[2] = True
+            i += 1
+            continue
+        append(ch)
+        i += 1
+
+    name = "".join(segments[0][0])
+    options = []
+    if segments[0][2]:
+        options.append((None, "".join(segments[0][1])))
+    for key_chars, value_chars, has_key in segments[1:]:
+        if has_key:
+            options.append(("".join(key_chars), "".join(value_chars)))
+        else:
+            # Positional values accumulate in key_chars (there is no '=').
+            options.append((None, "".join(key_chars)))
+    return name, options
+
+
+class FiltergraphEscapeTest(unittest.TestCase):
+    """Regression test for the Windows subtitle-burn crash.
+
+    The old build emitted ``subtitles=C:\\Users\\...:original_size=...``
+    with an UNESCAPED drive-letter path. The filtergraph parser split it
+    at ':', consumed the backslashes as escapes, and applied the path
+    tail to ``original_size`` (which expects a WxH image size), so the
+    render died before the first frame.
+    """
+
+    WINDOWS_SRT = (r"C:\Users\PMLS\Desktop\Veo-Documentry-Editor\output"
+                   r"\subtitles.srt")
+
+    def test_unescaped_path_reproduces_reported_failure(self):
+        buggy = "subtitles=%s:original_size=%s" % (self.WINDOWS_SRT,
+                                                    self.WINDOWS_SRT)
+        name, options = _parse_vf(buggy)
+        self.assertEqual(name, "subtitles")
+        # The drive letter became the filename and the de-escaped tail of
+        # the path became the second positional option (original_size).
+        self.assertEqual(options[0], (None, "C"))
+        self.assertEqual(
+            options[1],
+            (None, "UsersPMLSDesktopVeo-Documentry-Editoroutputsubtitles.srt"))
+
+    def test_burn_subtitles_windows_path_round_trips(self):
+        cfg = _cfg()
+        cfg["subtitle_enabled"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            renderer = object.__new__(Renderer)
+            renderer.cfg = cfg
+            renderer.ffmpeg = "ffmpeg"
+            renderer.step1 = directory
+            renderer.H = 1080
+            renderer.crf = 18
+            renderer.preset = "medium"
+            renderer.has_subtitles = True
+            video = os.path.join(directory, "main_video_raw.mp4")
+            with open(video, "wb") as fh:
+                fh.write(b"x")
+            with mock.patch("os.path.isfile", return_value=True), \
+                    mock.patch("src.renderer._run_ffmpeg") as run_ffmpeg:
+                out = renderer.burn_subtitles(video, self.WINDOWS_SRT)
+            self.assertEqual(out,
+                             os.path.join(directory, "main_video_burned.mp4"))
+            cmd = run_ffmpeg.call_args[0][0]
+            vf = cmd[cmd.index("-vf") + 1]
+            name, options = _parse_vf(vf)
+            self.assertEqual(name, "subtitles")
+            # The whole path must arrive as the single filename value.
+            self.assertEqual(options[0], (None, self.WINDOWS_SRT))
+            keys = [key for key, _ in options]
+            self.assertNotIn("original_size", keys)
+            self.assertIn("force_style", keys)
+            self.assertTrue(options[-1][1].startswith("Fontname="))
+
+    def test_tricky_paths_round_trip(self):
+        for path in (self.WINDOWS_SRT,
+                     r"C:\Users\me's clips;folder\sub,titles.srt",
+                     r"C:\a=b\c.srt",
+                     r"C:\dir\[1]\x.srt",
+                     "/home/user/output/subtitles.srt"):
+            vf = ("subtitles=%s:force_style='Fontname=DejaVu Sans'"
+                  % _filtergraph_escape(path))
+            name, options = _parse_vf(vf)
+            self.assertEqual(name, "subtitles", path)
+            self.assertEqual(options[0], (None, path), path)
+            self.assertEqual(options[1],
+                             ("force_style", "Fontname=DejaVu Sans"), path)
+
+
+class CheckDiskTest(unittest.TestCase):
+    def test_uses_cross_platform_disk_usage(self):
+        # os.statvfs is POSIX-only; on Windows it raises AttributeError,
+        # which the OSError guard cannot catch and which used to crash
+        # the render before the first stage.
+        with mock.patch("shutil.disk_usage",
+                        return_value=_USAGE(0, 0, 1024 ** 3)) as usage, \
+                mock.patch("os.statvfs",
+                           side_effect=AttributeError(
+                               "module 'os' has no attribute 'statvfs'")):
+            _check_disk("/tmp")  # must not raise
+            usage.assert_called_once()
+
+    def test_low_free_space_raises(self):
+        with mock.patch("shutil.disk_usage",
+                        return_value=_USAGE(0, 0, 1)):
+            with self.assertRaises(DiskSpaceError):
+                _check_disk("/tmp")
+
+
+class DrawtextFontTest(unittest.TestCase):
+    @staticmethod
+    def _renderer(cfg):
+        renderer = object.__new__(Renderer)
+        renderer.cfg = cfg
+        return renderer
+
+    def test_configured_font_wins_when_present(self):
+        cfg = _cfg()
+        with tempfile.TemporaryDirectory() as directory:
+            font = os.path.join(directory, "Font.ttf")
+            with open(font, "wb") as fh:
+                fh.write(b"x")
+            cfg["subtitle_font"] = font
+            self.assertEqual(self._renderer(cfg)._drawtext_font(), font)
+
+    def test_returns_none_when_no_font_exists(self):
+        cfg = _cfg()
+        cfg["subtitle_font"] = "/does/not/exist/Font.ttf"
+        with mock.patch("os.path.isfile", return_value=False):
+            self.assertIsNone(self._renderer(cfg)._drawtext_font())
 
 
 if __name__ == "__main__":
