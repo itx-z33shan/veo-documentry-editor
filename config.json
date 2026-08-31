@@ -2,6 +2,7 @@
   "ai_provider": "gemini",
   "ai_api_key_env": "GEMINI_API_KEY",
   "ffmpeg_bin": "tools/ffmpeg.exe",
+  "ffprobe_bin": "tools/ffprobe.exe",
   "width": 1920,
   "height": 1080,
   "fps": 30,

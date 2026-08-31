@@ -117,8 +117,8 @@ DEFAULTS = {
     "ai_description_cache_path": "output/ai_clip_descriptions.json",
 
     # --- Paths / binaries ------------------------------------------------
-    "ffmpeg_bin": "ffmpeg",
-    "ffprobe_bin": "ffprobe",
+    "ffmpeg_bin": "tools/ffmpeg.exe",
+    "ffprobe_bin": "tools/ffprobe.exe",
     "temp_dir": "temp",
     "output_dir": "output",
     "clips_dir": "clips",

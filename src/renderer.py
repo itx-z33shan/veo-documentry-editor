@@ -17,6 +17,7 @@ Render pipeline (multi-pass, resumable via done-files / output existence):
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import time
 
@@ -60,8 +61,7 @@ def _write_marker(marker_path, key):
 
 def _check_disk(output_dir, min_bytes=60 * 1024 * 1024):
     try:
-        st = os.statvfs(output_dir)
-        free = st.f_bavail * st.f_frsize
+        free = shutil.disk_usage(output_dir).free
     except OSError:
         return
     if free < min_bytes:
