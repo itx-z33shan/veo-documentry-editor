@@ -22,4 +22,6 @@ music/*
 
 # Example metadata / overrides stay available as templates
 # (clip metadata and overrides are committed, see examples/)
+
+# Bundled FFmpeg/FFprobe binaries (extracted from ffmpeg.zip locally)
 tools/

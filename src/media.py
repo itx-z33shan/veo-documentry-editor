@@ -25,11 +25,20 @@ _CHANNELS = {"mono": 1, "stereo": 2, "2.1": 3, "quad": 4, "4.0": 4, "5.0": 5,
              "5.1": 6, "6.1": 7, "7.1": 8}
 
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def find_binary(name, configured):
     """Resolve an ffmpeg/ffprobe binary path (explicit config > PATH)."""
-    if configured and (os.path.isfile(configured)
-                       and os.access(configured, os.X_OK)):
-        return os.path.abspath(configured)
+    if configured:
+        candidates = [configured]
+        if not os.path.isabs(configured):
+            # Also accept paths relative to the repository root, so the
+            # bundled tools/ layout works from any working directory.
+            candidates.append(os.path.join(_REPO_ROOT, configured))
+        for candidate in candidates:
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return os.path.abspath(candidate)
     found = shutil.which(name)
     if found:
         return os.path.abspath(found)

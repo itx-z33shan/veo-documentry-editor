@@ -40,6 +40,28 @@ def _run_ffmpeg(cmd, what):
     return proc
 
 
+# Characters that are structural to the FFmpeg filtergraph parser. Any of
+# them inside a value must be escaped, backslash first (it is the escape
+# character itself). Windows paths such as C:\Users\me\subtitles.srt always
+# contain ':' (option separator) and may contain ';' ',' or '='.
+_FILTERGRAPH_SPECIALS = "';=:[],"
+
+
+def _filtergraph_escape(value):
+    """Escape a value for safe use inside an FFmpeg filtergraph option.
+
+    Without escaping, the parser splits an unescaped Windows path at its
+    drive-letter ':' and consumes the backslashes as escape characters, so
+    the path fragments land in the wrong options (for example the tail of
+    the path is applied to ``original_size``, which expects a WxH image
+    size, and the render dies before the first frame).
+    """
+    value = value.replace("\\", "\\\\")
+    for ch in _FILTERGRAPH_SPECIALS:
+        value = value.replace(ch, "\\" + ch)
+    return value
+
+
 def _content_key(*parts):
     return hashlib.md5(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -60,6 +82,9 @@ def _write_marker(marker_path, key):
 
 
 def _check_disk(output_dir, min_bytes=60 * 1024 * 1024):
+    # shutil.disk_usage() is cross-platform. os.statvfs() is POSIX-only and
+    # would crash the render on Windows with AttributeError (which the
+    # OSError guard below does not catch).
     try:
         free = shutil.disk_usage(output_dir).free
     except OSError:
@@ -349,9 +374,8 @@ class Renderer:
         margin = max(20, int(self.H * 0.06))
         style = ("Fontname=DejaVu Sans,Fontsize=%d,Outline=1,Shadow=1,"
                  "MarginV=%d" % (fs, margin))
-        esc = subtitle_path.replace("\\", "\\\\").replace(":", "\\:")
-        esc = esc.replace("'", r"\'")
-        vf = "subtitles=%s:force_style='%s'" % (esc, style)
+        vf = "subtitles=%s:force_style='%s'" % (_filtergraph_escape(
+            subtitle_path), style)
         cmd = [self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                "-i", main_video_raw, "-vf", vf, "-an",
                "-c:v", "libx264", "-preset", self.preset, "-crf",
@@ -362,13 +386,39 @@ class Renderer:
     # ------------------------------------------------------------------
     # E. Intro / outro
     # ------------------------------------------------------------------
-    def _text_clip(self, text, path, duration):
+    def _drawtext_font(self):
+        """Return an existing font file for drawtext, or None.
+
+        The configured subtitle_font often points at a font that only
+        exists on one platform (for example the Linux DejaVu default on a
+        Windows machine), so fall back to well-known system fonts.
+        """
+        candidates = []
+        configured = self.cfg.get("subtitle_font")
+        if configured:
+            candidates.append(configured)
+        if os.name == "nt":
+            candidates += [r"C:\Windows\Fonts\arial.ttf",
+                           r"C:\Windows\Fonts\calibri.ttf",
+                           r"C:\Windows\Fonts\segoeui.ttf"]
+        else:
+            candidates += ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                           "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+                           "/usr/share/fonts/truetype/liberation/"
+                           "LiberationSans-Regular.ttf",
+                           "/System/Library/Fonts/Helvetica.ttf",
+                           "/Library/Fonts/Arial.ttf"]
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def _text_clip(self, text, path, duration, font):
         fs = max(30, self.W // 14)
-        font = self.cfg.get("subtitle_font",
-                            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
         draw = ("drawtext=text='%s':fontfile=%s:fontsize=%d:fontcolor=white:"
                 "x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.6:"
-                "boxborderw=20" % (text.replace("'", r"\'"), font, fs))
+                "boxborderw=20" % (text.replace("'", r"\'"),
+                                   _filtergraph_escape(font), fs))
         cmd = [self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
                "-f", "lavfi", "-i",
                "color=c=black:s=%dx%d:r=%d:d=%g" % (self.W, self.H, self.FPS,
@@ -389,20 +439,26 @@ class Renderer:
             return main_video_burned, 0.0, 0.0
         if not intro and not outro:
             return main_video_burned, 0.0, 0.0
+        font = self._drawtext_font()
+        if not font:
+            self._warnings.append(
+                "intro/outro requested but no usable font file was found on "
+                "this system; intro/outro were skipped.")
+            return main_video_burned, 0.0, 0.0
         parts = []
         intro_dur = outro_dur = 0.0
         if intro:
             intro_dur = float(self.cfg.get("intro_duration_seconds", 3.0))
             ipath = os.path.join(self.step1, "intro.mp4")
             self._text_clip(self.cfg.get("intro_title", "VEO DOCUMENTARY"),
-                            ipath, intro_dur)
+                            ipath, intro_dur, font)
             parts.append(ipath)
         parts.append(main_video_burned)
         if outro:
             outro_dur = float(self.cfg.get("outro_duration_seconds", 4.0))
             opath = os.path.join(self.step1, "outro.mp4")
             self._text_clip(self.cfg.get("outro_text", "Subscribe"), opath,
-                            outro_dur)
+                            outro_dur, font)
             parts.append(opath)
         lst = os.path.join(self.step1, "intro_outro.txt")
         with open(lst, "w", encoding="utf-8") as fh:
